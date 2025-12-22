@@ -32,13 +32,14 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 
 // public routes
-// users temporary
-app.use('/', indexRouter);
+app.use('/auth', authRouter); //LOGIN
+app.use('/', indexRouter); // LANDING PAGE
+// app.use('/admin', adminRouter);
 // app.use('/users', usersRouter);
-app.use('/auth', authRouter);
 
-// private routes
-app.use('/admin', adminRouter);
+
+// protected routes
+app.use('/admin', auth, adminRouter);
 app.use('/users', auth, usersRouter);
 app.use('/memberships', membershipsRouter);
 app.use('/attendance', attendanceRouter);
