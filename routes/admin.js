@@ -22,6 +22,26 @@ router.get('/', function(req, res, next) {
 // });
 
 
+// SEED ADMIN
+router.post("/seed-admin", async (req, res)=> {
+  if (process.env.NODE_ENV === 'production') {
+    return req.status(403).json({
+      message: "Seed disabled in production"
+    });
+  }
+
+  const password = await bcrypt.hash('admin123', 10);
+
+  await mysql.Query(`
+    INSERT IGNORE INTO master_user 
+    (mu_username, mu_password, mu_firstName, mu_lastName, mu_role, mu_status) 
+    VALUES (?, ?, 'Admin', 'User', 'ADMIN', 'ACTIVE')
+  `, ['admin', password]);
+
+  res.status(200).json({ message: "Admin created: admin/admin123" });
+});
+
+
 router.get("/load", async(req, res)=> {
 
   try {
@@ -244,7 +264,7 @@ router.put('/update', async (req, res)=> {
 
 
 // SOFT DELETE
-router.put('/delete', async (req, res)=> {
+router.put("/delete", async (req, res)=> {
   try {
     if (!req.user?.id) {
   return res.status(401).json({ 

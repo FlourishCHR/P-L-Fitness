@@ -5,6 +5,8 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 const auth = require('./middleware/auth');
 require('dotenv').config();
+const cron = require('node-cron');
+const mysql = require('./services/dbconnect.js');
 
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
@@ -34,20 +36,31 @@ app.use(express.static(path.join(__dirname, 'public')));
 // public routes
 app.use('/auth', authRouter); //LOGIN
 app.use('/', indexRouter); // LANDING PAGE
-// app.use('/admin', adminRouter);
+// app.use('/admin', adminRouter); // FOR SEEDED ADMIN
 // app.use('/users', usersRouter);
 
 
 // protected routes
 app.use('/admin', auth, adminRouter);
 app.use('/users', auth, usersRouter);
-app.use('/memberships', membershipsRouter);
-app.use('/attendance', attendanceRouter);
-app.use('/payments', paymentsRouter);
-app.use('/rewards', rewardsRouter);
-app.use('/sessions', sessionsRouter);
-app.use('/vouchers', vouchersRouter);
-app.use('/equipment', equipmentRouter);
+app.use('/memberships', auth, membershipsRouter);
+app.use('/payments', auth, paymentsRouter);
+app.use('/sessions', auth, sessionsRouter);
+app.use('/attendance', auth, attendanceRouter);
+app.use('/vouchers', auth, vouchersRouter);
+app.use('/rewards', auth, rewardsRouter);
+app.use('/equipment', auth, equipmentRouter);
+
+// DAILY POINT IN ATTENDANCE RESET => PASS POINTS TO REWARD POINTS
+// cron.schedule('0 0 * * *', async () => {
+//   try {
+//     console.log ('Daily points reset STARTED');
+//     await mysql.Query('TRUNCATE TABLE master_reward_points');
+//     console.log("Daily points reset COMPLETE");
+//   } catch (error) {
+//     console.error("RESET FAILED: ", error);
+//   }
+// });
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {
