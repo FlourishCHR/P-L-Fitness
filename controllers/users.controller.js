@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 const bcryptjs = require('bcryptjs');
 
 
@@ -38,12 +39,42 @@ class UserController {
                     });
                 }
 
+                // SYSTEM LOGGING - SUCCESS
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_PROFILE_VIEWED",
+                    "master_user",
+                    req.user.id,
+                    null,
+                    JSON.stringify({
+                        userId: req.user.id,
+                        username: user[0].mu_username
+                    })
+                );
+
                 res.status(200).json({
                     message: "Profile loaded",
                     data: user[0]
                 });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_PROFILE_FAILED",
+                    "master_user",
+                    req.user.id,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("UserController.getProfile: ", error);
             res.status(500).json({
                 message: "Server Error (500)",
@@ -111,13 +142,46 @@ class UserController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_PROFILE_UPDATED",
+                "master_user",
+                req.user.id,
+                null,
+                JSON.stringify({
+                    userId: req.user.id,
+                    fieldsUpdated: {
+                        phoneNumber: !!phoneNumber,
+                        email: !!email,
+                        password: !!hashedPassword
+                    },
+                    affectedRows: result.affectedRows
+                })
+            );
+
             res.status(200).json({
                 message: "Profile updated successfully",
                 affectedRows: result.affectedRows
             });
 
         } catch (error) {
-
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_PROFILE_UPDATE_FAILED",
+                    "master_user",
+                    req.user.id,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Email",
@@ -146,9 +210,24 @@ class UserController {
 
             const points = await mysql.Query(`
                 SELECT * FROM master_reward_point
-                WHERE mr_userId = ?
-                ORDER BY mr_dateEarned DESC
+                WHERE mrp_userId = ?
+                ORDER BY mrp_dateEarned DESC
                 `, [req.user.id]);
+
+                // SYSTEM LOGGING - SUCCESS
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_POINTS_VIEWED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    JSON.stringify({
+                        userId: req.user.id,
+                        totalPointsRecords: points.length
+                    })
+                );
 
                 res.status(200).json({
                     message: "Points history loaded",
@@ -156,7 +235,20 @@ class UserController {
                 });
 
         } catch (error) {
-            
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_POINTS_VIEWED_FAILED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("UserController.getPoints: ", error);
             res.status(500).json({
                 message: "Server Error (500)",

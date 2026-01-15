@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class RewardsController {
     // GET /rewards/ DASHBOARD PAGE
@@ -46,6 +47,21 @@ class RewardsController {
 
             const historyResult = await mysql.Query(sqlHistory, [req.user.id]);
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "REWARDS_LISTED",
+                "master_reward_point",
+                null,
+                null,
+                JSON.stringify({
+                    userId,
+                    totalRewardPoints: totalResult[0]?.totalRewardPoints || 0
+                })
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: {
@@ -55,6 +71,21 @@ class RewardsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "REWARDS_LIST_FAILED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("RewardsController.loadRewards: ", error);
             res.status(500).json({
                 message: "Server Error (500)",
@@ -88,12 +119,43 @@ class RewardsController {
             ORDER BY totalPoints DESC`;
 
             const result = await mysql.Query(sql);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "REWARDS_ADMIN_LISTED",
+                "master_reward_point",
+                null,
+                null,
+                JSON.stringify({
+                    totalUsers: result.length,
+                    topMemberPoints: result[0]?.totalPoints || 0
+                })
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: result
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if (req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "REWARDS_ADMIN_LIST_FAILED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("RewardsController.adminLoad: ", error);
             res.status(500).json({
                 message: "Server Error (500)",
@@ -167,6 +229,23 @@ class RewardsController {
 
             const result = await mysql.Query(sql, [userId, ma_id, ma_pointsEarned]);
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "ATTENDANCE_POINTS_CONVERTED",
+                "master_reward_point",
+                result.insertId,
+                null,
+                JSON.stringify({
+                    ma_id,
+                    userId,
+                    pointsConverted: ma_pointsEarned,
+                    rewardId: result.insertId
+                })
+            );
+
             res.status(201).json({
                 message: "Attendance points converted successfully",
                 data: {
@@ -178,6 +257,21 @@ class RewardsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_CONVERT_FAILED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("RewardsController.convertAttendance: ", error);
             res.status(500).json({
                 message: "Server Error (500)",
@@ -274,6 +368,25 @@ class RewardsController {
                     mv_userId = ?
                 WHERE mv_id = ?`, [userId, voucherId]);
 
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHER_REDEEMED",
+                "master_reward_point",
+                null,
+                null,
+                JSON.stringify({
+                    userId,
+                    voucherId,
+                    voucherCode: mv_code,
+                    pointsSpent: mv_pointsRequired,
+                    remainingPoints: userPoints - mv_pointsRequired
+                })
+            );
+
             res.status(200).json({
                 message: "Voucher redeemed successfully",
                 data: {
@@ -285,6 +398,21 @@ class RewardsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHER_REDEEMED_FAILED",
+                    "master_reward_point",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("RewardsController.redeemVoucher: ", error);
             res.status(500).json({
                 message: "Server Error (500)",

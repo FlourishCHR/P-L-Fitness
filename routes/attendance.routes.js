@@ -5,7 +5,7 @@ const AttendanceController = require('../controllers/attendance.controller');
 // DASHBOARD PAGE
 router.get("/", AttendanceController.getDashboard);
 
-// API ENDPOINT
+// API ENDPOINTS
 router.get("/load", AttendanceController.loadAttendance);
 router.post("/checkin", AttendanceController.checkin);
 router.put("/checkout", AttendanceController.checkout);

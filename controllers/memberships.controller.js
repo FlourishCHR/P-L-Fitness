@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class MembershipController {
     // GET /membership/ DASHBOARD PAGE
@@ -9,6 +10,12 @@ class MembershipController {
     // GET /memberships/load
     static async loadMemberships(req, res) {
         try {
+
+            if (!req.user?.id || req.user.role !== "ADMIN") {
+                return res.status(401).json({
+                    message: "Admin authentication required"
+                });
+            }
 
             const sql =`
             SELECT
@@ -29,12 +36,40 @@ class MembershipController {
             ORDER BY mm.mm_startDate ASC`;
 
             const result = await mysql.Query(sql);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "MEMBERSHIPS_LISTED",
+                "master_membership",
+                null,    // no record
+                null,   // no old data
+                null    // no new data
+            );
+
             res.status(200).json({
                 message: "Success", 
                 data: result
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if (req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "MEMBERSHIP_LIST_FAILED",
+                    "master_membership",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("MembershipsController.loadMemberships: ", error);
             res.status(500).json({
                 message: "Error fetching memberships",
@@ -77,6 +112,22 @@ class MembershipController {
 
             const result = await mysql.Query(sql, [userId, startDate, endDate,
                 planType, price, nextDueDate, status, totalPaid]);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "MEMBERSHIP_CREATED",
+                "master_membership",
+                result.insertId, // new record ID
+                null,            // no old data
+                JSON.stringify({
+                    userId,
+                    planType,
+                    price
+                })
+            );
             
             res.status(201).json({
                 message: "Membership created successfully",
@@ -84,6 +135,21 @@ class MembershipController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "MEMBERSHIP_CREATE_FAILED",
+                    "master_membership",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                )
+            };
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -102,9 +168,9 @@ class MembershipController {
     static async updateMembership(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
+                    message: "Admin authentication required (Bearer token)"
                 });
             }
 
@@ -112,15 +178,18 @@ class MembershipController {
                 nextDueDate, status, totalPaid: newTotalPaid } = req.body;
 
             // VALIDATION
-            if (!id || !startDate || !endDate || !planType || !price) {
+            if (!id || !planType || !price) {
                 return res.status(400).json({
-                    message: "id, startDate, endDate, planType, price required"
+                    message: "id, planType, price required"
                 });
             }
 
             // TOTAL PAYMENT CALCULATION
             const current = await mysql.Query(`
-                SELECT mm_totalPaid
+                SELECT
+                    mm_startDate,
+                    mm_endDate,
+                    mm_totalPaid
                 FROM master_membership
                 WHERE mm_id = ?`, [id]);
             if (!current.length) {
@@ -130,6 +199,8 @@ class MembershipController {
             }
 
             const currentTotalPaid = current[0].mm_totalPaid || 0;
+            const startDateFinal = startDate || current[0].mm_startDate;
+            const endDateFinal = endDate || current[0].mm_endDate;
             const additionalPayment = newTotalPaid || price;
             const updatedTotalPaid = currentTotalPaid + additionalPayment;
 
@@ -145,7 +216,7 @@ class MembershipController {
                 mm_totalPaid = ?
             WHERE mm_id = ?`;
 
-            const result = await mysql.Query(sql, [startDate, endDate,
+            const result = await mysql.Query(sql, [startDateFinal, endDateFinal,
                 planType, price, nextDueDate, status, updatedTotalPaid, id]);
 
             if (result.affectedRows === 0) {
@@ -153,6 +224,25 @@ class MembershipController {
                     message: "Membership not found"
                 });
             }
+
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "MEMBERSHIP_UPDATED",
+                "master_membership",
+                id,
+                JSON.stringify({
+                    totalPaid: currentTotalPaid // old data
+                }),
+                JSON.stringify({
+                    totalPaid: updatedTotalPaid,
+                    planType,
+                    price
+                }) // new data
+            );
 
             res.status(200).json({
                 message: "Membership updated successfully",
@@ -163,6 +253,21 @@ class MembershipController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "MEMBERSHIP_UPDATE_FAILED",
+                    "master_membership",
+                    id || null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                )
+            };
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -181,9 +286,9 @@ class MembershipController {
     static async deleteMembership(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
+                    message: "Admin authentication required (Bearer token)"
                 });
             }
 
@@ -196,6 +301,10 @@ class MembershipController {
                 });
             }
 
+            const current = await mysql.Query(`
+            SELECT * FROM master_membership
+            WHERE mm_id = ?`, [id]);
+
             const sql =`
             UPDATE master_membership
             SET
@@ -204,6 +313,18 @@ class MembershipController {
             WHERE mm_id = ?`;
 
             const result = await mysql.Query(sql, [id]);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "MEMBERSHIP_DELETED",
+                "master_membership",
+                id,
+                JSON.stringify(current[0]), // old data
+                null // no new data
+            );
 
             if (result.affectedRows === 0) {
                 return res.status(404).json({
@@ -218,6 +339,21 @@ class MembershipController {
             });
 
         } catch (error) {
+            if(req.user?.id) {
+                // SYSTEM LOGGING - ERROR
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "MEMBERSHIP_DELETE_FAILED",
+                    "master_membership",
+                    id || null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                )
+            };
             console.error("MembershipsController.deleteMembership: ", error);
             res.status(500).json({
                 message: "Server Error (500)"

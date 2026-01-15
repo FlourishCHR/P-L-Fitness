@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 const bcryptjs = require('bcryptjs');
 
 class AdminController {
@@ -31,6 +32,18 @@ class AdminController {
                 VALUES (?, ?, 'Admin', 'USER', 'ADMIN', 'ACTIVE')
                 `, ["admin", password]);
 
+                // SYSTEM LOGGING - SUCCESS
+                await SystemLogger.logAction(
+                    null,
+                    req.id || "127.0.0.1",
+                    req.get("User-Agent") || "seed-script",
+                    "ADMIN-SEEDED",
+                    "master_user",
+                    null, // no record ID
+                    null, // no old data
+                    { username: "admin", password: "admin123" }
+                )
+
                 res.status(200).json({
                     message: "Admin created: admin/admin123"
                 });
@@ -49,6 +62,12 @@ class AdminController {
     static async loadUsers(req,res) {
         try {
             
+            if (!req.user?.id || req.user.role !== "ADMIN") {
+                return res.status(401).json({
+                    message: "Admin authentication required (Bearer token)"
+                });
+            }
+
             const sql =`
             SELECT
                 mu.mu_id,
@@ -76,6 +95,19 @@ class AdminController {
             `;
 
             const result = await mysql.Query(sql);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USERS_LISTED",
+                "master_user",
+                null, // no specific record
+                null, // no old data
+                null, // no new data
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: result
@@ -95,7 +127,7 @@ class AdminController {
     static async createUser(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
                     message: "Admin authentication required (Bearer token)"
                 });
@@ -157,6 +189,23 @@ class AdminController {
                 specialty, status, req.user.id
             ]);
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_CREATED",
+                "master_user",
+                result.insertId, // New userId
+                null, // no old data
+                {
+                    username,
+                    email,
+                    role,
+                    createdBy: req.user.id
+                }
+            );
+
             res.status(201).json({
                 message: "User created successfully",
                 userId: result.insertId,
@@ -183,7 +232,7 @@ class AdminController {
     static async updateUser(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
                     message: "Admin authentication required (Bearer token)"
                 });
@@ -235,6 +284,15 @@ class AdminController {
                 });
             }
 
+             // OLD USER SYSTEM LOGGING
+            const oldUser = await mysql.Query(`
+                SELECT
+                    mu_username,
+                    mu_email,
+                    mu_role
+                FROM master_user
+                WHERE mu_id = ?`, [id]);
+
             const sql =`
             UPDATE master_user
             SET
@@ -261,6 +319,22 @@ class AdminController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_UPDATED",
+                "master_user",
+                id,
+                oldUser[0] || null, // old data
+                {
+                    username,
+                    email,
+                    role
+                } // new data
+            );
+
             res.status(200).json({
                 message: "User updated successfully",
                 affectedRows: result.affectedRows,
@@ -286,7 +360,7 @@ class AdminController {
     static async deleteUser(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
                     message: "Admin authentication required (Bearer token)"
                 });
@@ -300,6 +374,15 @@ class AdminController {
                     message: "Valid ID required"
                 });
             }
+
+            // OLD USER SYSTEM LOGGING
+            const oldUser = await mysql.Query(`
+            SELECT
+                mu_username,
+                mu_email,
+                mu_role
+            FROM master_user
+            WHERE mu_id = ?`, [id]);
 
             const sql =`
             UPDATE master_user
@@ -324,6 +407,20 @@ class AdminController {
                     message: "User not found"
                 });
             }
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_DELETED",
+                "master_user",
+                id,
+                oldUser[0] || null, // old data
+                {
+                    deletedBy: req.user.id
+                }
+            );
 
             res.status(200).json({
                 message: "User has been soft deleted",

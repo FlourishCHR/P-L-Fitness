@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class VouchersController {
     // GET /vouchers/ DASHBOARD PAGE
@@ -10,6 +11,12 @@ class VouchersController {
     // GET /vouchers/load
     static async loadVouchers(req, res) {
         try {
+
+            if (!req.user?.id) {
+                return res.status(401).json({
+                    message: "Authentication required (Bearer token)"
+                });
+            }
             
             const sql =`
             SELECT
@@ -33,12 +40,42 @@ class VouchersController {
             ORDER BY mv.mv_id DESC`;
 
             const result = await mysql.Query(sql);
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHERS_LIST_VIEWED",
+                "master_voucher",
+                null,
+                null,
+                JSON.stringify({
+                    userId: req.user.id,
+                    totalVouchers: result.length,
+                    activeVouchers: result.filter(v => v.mv_status !== "DEACTIVATED").length
+                })
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: result
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHERS_LOAD_FAILED",
+                    "master_voucher",
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("VouchersController.loadVouchers: ", error);
             res.status(500).json({
                 message: "Error fetching vouchers",
@@ -87,6 +124,24 @@ class VouchersController {
                 discountType, value, minSpend || 0, maxUses || 1, useCount || 0,
                 validFrom, validUntil, status || "ACTIVE"]);
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHER_CREATED",
+                "master_voucher",
+                result.insertId,
+                null,
+                JSON.stringify({
+                    adminUserId: req.user.id,
+                    voucherId: result.insertId,
+                    voucherCode: code,
+                    discountType: discountType,
+                    value: value
+                })
+            );
+
             res.status(201).json({
                 message: "Voucher created successfully",
                 data: {
@@ -95,6 +150,20 @@ class VouchersController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHER_CREATE_FAILED",
+                    "master_voucher",
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -167,6 +236,28 @@ class VouchersController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHER_UPDATED",
+                "master_voucher",
+                id,
+                null,
+                JSON.stringify({
+                    userId: req.user.id,
+                    voucherId: id,
+                    voucherCode: code,
+                    changes: {
+                        discountType: discountType,
+                        value: value,
+                        status: status
+                    },
+                    affectedRows: result.affectedRows
+                })
+            );
+
             res.status(200).json({
                 message: "Voucher has been updated",
                 affectedRows: result.affectedRows,
@@ -174,6 +265,20 @@ class VouchersController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHER_UPDATE_FAILED",
+                    "master_voucher",
+                    id || null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -277,6 +382,25 @@ class VouchersController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHER_REDEEMED",
+                "master_voucher",
+                id,
+                null,
+                JSON.stringify({
+                    memberId: req.user.id,
+                    voucherId: id,
+                    voucherCode: voucher.mv_code,
+                    previousUseCount: voucher.mv_useCount,
+                    newUseCount: voucher.mv_useCount + 1,
+                    remainingUses: (voucher.mv_maxUses || 99999) - (voucher.mv_useCount + 1)
+                })
+            );
+
             res.status(200).json({
                 message: "Voucher redeemed successfully",
                 details: {
@@ -287,6 +411,20 @@ class VouchersController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHER_REDEEMED_FAILED",
+                    "master_voucher",
+                    id || null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("VouchersController.useVoucher: ", error);
             res.status(500).json({
                 message: "Server Error (500)",
@@ -327,12 +465,42 @@ class VouchersController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "VOUCHER_RESET",
+                "master_voucher",
+                voucherId,
+                null,
+                JSON.stringify({
+                    adminUserId: req.user.id,
+                    voucherId: voucherId,
+                    action: "use_count_reset_to_zero"
+                })
+            );
+
             res.status(200).json({
                 message: "Voucher use count reset",
                 affectedRows: result.affectedRows
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "VOUCHER_RESET_FAILED",
+                    "master_voucher",
+                    voucherId || null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("VouchersController.resetVoucherUse: ", error);
             res.status(500).json({
                 message: "Server Error (500)",

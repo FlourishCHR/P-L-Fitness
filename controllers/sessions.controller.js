@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class SessionsController {
     // GET /sessions/ - DASHBOARD PAGE
@@ -10,6 +11,18 @@ class SessionsController {
     // GET /sessions/load
     static async loadSessions(req, res) {
         try {
+
+            if(!req.user?.id) {
+                return res.status(401).json({
+                    message: "Authentication required (Bearer token)"
+                });
+            }
+
+            if (req.user.role !== "ADMIN" && req.user.role !== "COACH") {
+                return res.status(401).json({
+                    message: "Admin or Coach access required"
+                });
+            }
             
             const sql =`
             SELECT
@@ -23,16 +36,45 @@ class SessionsController {
             FROM master_session ms
             LEFT JOIN master_user mu ON ms.ms_userId = mu.mu_id
             -- WHERE mu.mu_status != 'DELETED' -- delete this to see 'DELETED' status
-            -- AND mu.mu_status != 'DELETED' -- delete this to see 'DELETED' status
             ORDER BY ms.ms_datetime ASC`;
 
             const result = await mysql.Query(sql);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "SESSIONS_LISTED",
+                "master_session",
+                null,
+                null,
+                JSON.stringify({
+                    totalSessions: result.length
+                })
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: result
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "SESSIONS_LIST_FAILED",
+                    "master_session",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("SessionsController.loadSessions: ", error);
             res.status(500).json({
                 message: "Error fetching sessions",
@@ -49,6 +91,12 @@ class SessionsController {
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
+                });
+            }
+
+            if (req.user.role !== "ADMIN" && req.user.role !== "COACH") {
+                return res.status(401).json({
+                    message: "Admin or Coach access required"
                 });
             }
 
@@ -72,6 +120,24 @@ class SessionsController {
 
             const result = await mysql.Query(sql, [userId, sessionName, datetime, capacity]);
 
+            //SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "SESSION_CREATED",
+                "master_session",
+                result.insertId,
+                null,
+                JSON.stringify({
+                    userId,
+                    sessionName,
+                    datetime,
+                    capacity,
+                    ms_id: result.insertId
+                })
+            );
+
             res.status(201).json({
                 message: "Session created successfully",
                 data: {
@@ -80,6 +146,21 @@ class SessionsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "SESSION_CREATE_FAILED",
+                    "master_session",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -102,6 +183,12 @@ class SessionsController {
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
+                });
+            }
+
+            if (req.user.role !== "ADMIN" && req.user.role !== "COACH") {
+                return res.status(401).json({
+                    message: "Admin or Coach access required"
                 });
             }
 
@@ -131,6 +218,25 @@ class SessionsController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "SESSION_UPDATED",
+                "master_session",
+                id,
+                null,
+                JSON.stringify({
+                    id,
+                    sessionName,
+                    datetime,
+                    capacity,
+                    status: status || "unchanged",
+                    affectedRows: result.affectedRows
+                })
+            );
+
             res.status(200).json({
                 message: "Session has been updated",
                 affectedRows: result.affectedRows,
@@ -138,6 +244,21 @@ class SessionsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "SESSION_UPDATE_FAILED",
+                    "master_session",
+                    id,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -163,6 +284,12 @@ class SessionsController {
                 });
             }
 
+            if (req.user.role !== "ADMIN" && req.user.role !== "COACH") {
+                return res.status(401).json({
+                    message: "Admin or Coach access required"
+                });
+            }
+
             const { id } = req.body;
 
             // VALIDATION
@@ -185,6 +312,21 @@ class SessionsController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "SESSION CANCELLED",
+                "master_session",
+                id,
+                null,
+                JSON.stringify({
+                    id,
+                    affectedRows: result.affectedRows
+                })
+            );
+
             res.status(200).json({
                 message: "Session has been soft deleted",
                 affectedRows: result.affectedRows,
@@ -192,6 +334,21 @@ class SessionsController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "SESSION_DELETE_FAILED",
+                    "master_session",
+                    id,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("SessionsController.deleteSession: ", error);
             res.status(500).json({
                 message: "Server Error (500)",

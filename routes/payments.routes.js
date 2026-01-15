@@ -5,7 +5,7 @@ const PaymentsController = require('../controllers/payments.controller');
 // DASHBOARD PAGE
 router.get("/", PaymentsController.getDashboard);
 
-// API ENDPOINT
+// API ENDPOINTS
 router.get("/load", PaymentsController.loadPayments);
 router.post("/insert", PaymentsController.createPayment);
 router.put("/update", PaymentsController.updatePayment);

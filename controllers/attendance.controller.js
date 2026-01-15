@@ -1,4 +1,5 @@
 const mysql = require('../services/dbconnect.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class AttendanceController {
     // GET /attendance/ DASHBOARD PAGE
@@ -16,7 +17,7 @@ class AttendanceController {
                 });
             }
 
-            const sql =`
+            let sql =`
             SELECT
                 ma.ma_id,
                 ma.ma_userId,
@@ -32,16 +33,52 @@ class AttendanceController {
             LEFT JOIN master_user mu ON ma.ma_userId = mu.mu_id
             LEFT JOIN master_session ms ON ma.ma_sessionId = ms.ms_id
             LEFT JOIN master_user coach ON ms.ms_userId = coach.mu_id
-            WHERE ma.ma_deleted = 0
-            ORDER BY ma.ma_checkin DESC`;
+            WHERE ma.ma_deleted = 0`;
 
-            const result = await mysql.Query(sql);
+            let result;
+
+            if (req.user.role !== "ADMIN") {
+                sql += ` AND ma.ma_userId = ? ORDER BY ma.ma_checkin DESC`;
+                result = await mysql.Query(sql, [req.user.id]);
+            } else {
+                sql += ` ORDER BY ma.ma_checkin DESC`
+                result = await mysql.Query(sql, [req.user.id]);
+            }
+
+            
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction (
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "ATTENDANCE LISTED",
+                "master_attendance",
+                null,
+                null,
+                null
+            );
+
             res.status(200).json({
                 message: "Success",
                 data: result
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_LIST_FAILED",
+                    "master_attendance",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             console.error("AttendanceController.loadAttendance: ", error);
             res.status(500).json({
                 message: "Error fetching attendance",
@@ -64,9 +101,9 @@ class AttendanceController {
             const { userId, sessionId } = req.body;
 
             // VALIDATION
-            if (!userId) {
+            if (!userId || userId != req.user.id) {
                 return res.status(400).json({
-                    message: "userId required"
+                    message: "userId must match your account"
                 });
             }
 
@@ -78,6 +115,22 @@ class AttendanceController {
             VALUES (?, ?, NOW())`;
 
             const result = await mysql.Query(sql, [userId, sessionId || null]);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "ATTENDANCE_CHECKED_IN",
+                "master_attendance",
+                result.insertId,    // new attendance id (ma_id)
+                null,              // no old data
+                JSON.stringify({
+                    userId,
+                    sessionId: sessionId || 'FREE_WORKOUT'
+                })
+            );
+
             res.status(201).json({
                 message: "Checkin success",
                 data: {
@@ -86,6 +139,21 @@ class AttendanceController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_CHECKIN_FAILED",
+                    "master_attendance",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Member already checked in",
@@ -205,6 +273,24 @@ class AttendanceController {
                 });
             }
 
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "ATTENDANCE_CHECKED_OUT",
+                "master_attendance",
+                ma_id,
+                null,
+                JSON.stringify({
+                    duration_minutes: duration,
+                    points_earned: pointsThisWorkout,
+                    daily_total: pointsEarnedToday + pointsThisWorkout,
+                    weekly_total: pointsEarnedWeek + pointsThisWorkout
+                })
+            );
+
             res.status(200).json({
                 message: "Checkout success",
                 affectedRows: result.affectedRows,
@@ -220,6 +306,21 @@ class AttendanceController {
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if (req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_CHECKOUT_FAILED",
+                    "master_attendance",
+                    ma_id,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",
@@ -239,9 +340,9 @@ class AttendanceController {
     static async deleteAttendance(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
+                    message: "Admin authentication required (Bearer token)"
                 });
             }
 
@@ -266,12 +367,39 @@ class AttendanceController {
                 });
             }
 
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "ATTENDANCE_DELETED",
+                "master_attendance",
+                id,
+                null,
+                JSON.stringify({ ID: id })
+            );
+
             res.status(200).json({
                 message: "Attendance deleted successfully",
                 data: {id}
             });
 
         } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_DELETE_FAILED",
+                    "master_attendance",
+                    id,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
             if (error.code === "ER_DUP_ENTRY") {
                 return res.status(409).json({
                     message: "Duplicated Entry",

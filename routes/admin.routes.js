@@ -5,7 +5,7 @@ const AdminController = require('../controllers/admin.controller');
 // DASHBOARD PAGE
 router.get("/", AdminController.getDashboard);
 
-// API ENDPOINT
+// API ENDPOINTS
 router.post("/seed-admin", AdminController.seedAdmin);
 router.get("/load", AdminController.loadUsers);
 router.post("/insert", AdminController.createUser);
