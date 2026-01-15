@@ -42,7 +42,7 @@ class AttendanceController {
                 result = await mysql.Query(sql, [req.user.id]);
             } else {
                 sql += ` ORDER BY ma.ma_checkin DESC`
-                result = await mysql.Query(sql, [req.user.id]);
+                result = await mysql.Query(sql);
             }
 
             
@@ -104,6 +104,31 @@ class AttendanceController {
             if (!userId || userId != req.user.id) {
                 return res.status(400).json({
                     message: "userId must match your account"
+                });
+            }
+
+            if (sessionId) {
+                const session = await mysql.Query(`
+                    SELECT ms_status
+                    FROM master_session
+                    WHERE ms_id = ?`, [sessionId]);
+                if (session[0]?.ms_status !== "ACTIVE") {
+                    return res.status(400).json({
+                        message: "Session not active"
+                    });
+                }
+            }
+
+            const existing = await mysql.Query(`
+                SELECT ma_id
+                FROM master_attendance
+                WHERE ma_userId = ?
+                AND ma_checkout IS NULL
+                AND ma_deleted = 0`, [userId]);
+
+            if (existing.length > 0) {
+                return res.status(409).json({
+                    message: "Already checked in"
                 });
             }
 
@@ -188,91 +213,85 @@ class AttendanceController {
                 });
             }
 
-            // FETCH USER ID FROM ATTENDANCE ID
-            const attendance = await mysql.Query(`
-                SELECT ma_userId FROM master_attendance
-                WHERE ma_id = ?`, [ma_id]);
-            const userId = attendance[0]?.ma_userId;
-            if (!userId) {
-                return res.status(404).json({
-                    message: "Attendance not found"
-                });
-            }
+            const result = await mysql.Query(`
+                SELECT
+                    ma.ma_id,
+                    ma.ma_userId,
+                    ma.ma_checkin,
+                    TIMESTAMPDIFF(MINUTE, ma.ma_checkin, NOW()) AS duration,
+                    
+                    -- DAILY POINTS (TODAY'S COMPLETED CHECKOUTS)
+                    COALESCE((
+                        SELECT SUM(ma2.ma_pointsEarned)
+                        FROM master_attendance ma2
+                        WHERE ma2.ma_userId = ma.ma_userId
+                        AND ma2.ma_checkout IS NOT NULL
+                        AND DATE(ma2.ma_checkout) = CURDATE()
+                        AND ma2.ma_deleted = 0
+                    ), 0) AS pointsEarnedToday,
+                    
+                    -- WEEKLY POINTS (THIS WEEK'S COMPLETED CHECKOUTS)
+                    COALESCE((
+                        SELECT SUM(ma3.ma_pointsEarned)
+                        FROM master_attendance ma3
+                        WHERE ma3.ma_userId = ma.ma_userId
+                        AND ma3.ma_checkout IS NOT NULL
+                        AND YEARWEEK(ma3.ma_checkout) = YEARWEEK(NOW())
+                        AND ma3.ma_deleted = 0
+                    ), 0) AS pointsEarnedWeek
+                FROM master_attendance ma
+                WHERE ma.ma_id = ?
+                AND ma.ma_checkout IS NULL
+                AND ma.ma_deleted = 0`, [ma_id]);
 
-            // CALCULATE DURATION
-            const durationRow = await mysql.Query(`
-                SELECT TIMESTAMPDIFF(MINUTE, ma_checkin, NOW())
-                AS duration FROM master_attendance
-                WHERE ma_id = ?`, [ma_id]);
-            const duration = durationRow[0]?.duration;
+                if (!result[0]) {
+                    return res.status(404).json({
+                        message: "Attendance not found or already checked out"
+                    });
+                }
 
-            // DEBUG
-            if (duration === null || duration === undefined) {
-                res.status(404).json({
-                    message: "Invalid attendance record"
-                });
-            }
+                const {
+                    ma_userId: userId,
+                    duration,
+                    pointsEarnedToday,
+                    pointsEarnedWeek
+                } = result[0];
 
-            // CHECK TODAYS POINTS FROM USER
-            const todayTotal = await mysql.Query(`
-                SELECT COALESCE(SUM(ma_pointsEarned), 0) AS totalToday
-                FROM master_attendance
-                WHERE ma_userId = ?
-                AND ma_checkout IS NOT NULL
-                AND DATE(ma_checkout) = CURDATE()
-                AND ma_deleted = 0`, [userId]);
-            const pointsEarnedToday = todayTotal[0]?.totalToday;
-            const remainingPoints = 120 - pointsEarnedToday;
-
-            if (remainingPoints <= 0) {
+            // USER OWNERSHIP VALIDATION
+            if (userId != req.user.id && req.user.role !== "ADMIN") {
                 return res.status(403).json({
-                    message: "Daily points cap (120) reached",
-                    data: {
-                        pointsToday: pointsEarnedToday
-                    }
+                    message: "Unauthorized to checkout this attendance"
                 });
             }
 
-            // CHECK WEEKLY POINTS
-            const weekTotal = await mysql.Query(`
-                SELECT COALESCE(SUM(ma_pointsEarned), 0) AS totalWeek
-                FROM master_attendance
-                WHERE ma_userId = ?
-                AND ma_checkout IS NOT NULL
-                AND YEARWEEK(ma_checkout) = YEARWEEK(NOW())
-                AND ma_deleted = 0`, [userId]);
-            const pointsEarnedWeek = weekTotal[0]?.totalWeek;
+            // Points calculation
+            const remainingPoints = 120 - pointsEarnedToday;
             const weeklyRemaining = 600 - pointsEarnedWeek;
 
-            if (weeklyRemaining <= 0) {
-                return res.status(403).json({
-                    message: "Weekly points cap (600) reached",
-                    data: {
-                        pointsThisWeek: pointsEarnedWeek
-                    }
-                });
+            if (remainingPoints <= 0) {
+            return res.status(403).json({
+                message: "Daily points cap (120) reached",
+                data: { pointsToday: pointsEarnedToday }
+            });
             }
 
-            // CALCULATE POINTS
-            const pointsThisWorkout = Math.min(duration, remainingPoints, weeklyRemaining, 120);
+            if (weeklyRemaining <= 0) {
+            return res.status(403).json({
+                message: "Weekly points cap (600) reached",
+                data: { pointsThisWeek: pointsEarnedWeek }
+            });
+            }
+
+            const pointsThisWorkout = Math.min(duration || 0, remainingPoints, weeklyRemaining, 120);
 
             // UPDATE ATTENDANCE
-            const sql =`
+            const updateResult = await mysql.Query(`
             UPDATE master_attendance
             SET
                 ma_checkout = NOW(),
                 ma_duration = ?,
                 ma_pointsEarned = ?
-            WHERE ma_id = ?`;
-
-            const result = await mysql.Query(sql, [duration, pointsThisWorkout, ma_id]);
-
-            if (result.affectedRows === 0) {
-                return res.status(404).json({
-                    message: "Attendance not found"
-                });
-            }
-
+            WHERE ma_id = ?`, [duration || 0, pointsThisWorkout, ma_id]);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
@@ -293,7 +312,7 @@ class AttendanceController {
 
             res.status(200).json({
                 message: "Checkout success",
-                affectedRows: result.affectedRows,
+                affectedRows: updateResult.affectedRows,
                 data: {
                     ma_id,
                     duration_minutes: duration,

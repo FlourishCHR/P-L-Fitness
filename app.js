@@ -51,31 +51,59 @@ app.use('/vouchers', auth, vouchersRouter);
 app.use('/rewards', auth, rewardsRouter);
 app.use('/equipment', auth, equipmentRouter);
 
-// DAILY POINT IN ATTENDANCE RESET => PASS POINTS TO REWARD POINTS
-cron.schedule('0 0 * * *', async () => {
+// DAILY POINTS ARCHIVE (MIDNIGHT)
+cron.schedule('0 0 * * *', async()=> {
   try {
+    
     await mysql.Query(`
-      UPDATE master_attendance
-      SET ma_pointsEarned = 0
-      WHERE ma_checkout >= DATE_SUB(NOW(), INTERVAL 1 DAY)`);
-    console.log("Daily points reset");
+      INSERT INTO master_reward_point
+        (mrp_userId,
+        mrp_attendanceId,
+        mrp_pointsAdded,
+        mrp_source)
+      SELECT 
+        ma.ma_userId,
+        ma.ma_id,
+        ma.ma_pointsEarned,
+        'DAILY ATTENDANCE'
+        FROM master_attendance ma
+        WHERE DATE(ma.ma_checkout) = CURDATE() - INTERVAL 1 DAY
+        AND ma.ma_pointsEarned > 0
+        AND ma.ma_deleted = 0`);
+      console.log("Daily attendance points archived");
+
   } catch (error) {
-    console.error("RESET FAILED: ", error);
+    console.error("Daily CRON failed: ", error);
   }
 });
 
-// WEEKLY POINT IN ATTENDANCE => SUNDAY MIDNIGHT
-cron.schedule('0 0 * * 0', async ()=> {
+// WEEKLY POINTS ARCHIVE (SUNDAY MIDNIGHT)
+cron.schedule('0 0 * * 0', async () => {
   try {
+
     await mysql.Query(`
-      UPDATE master_attendance
-      SET ma_pointsEarned = 0
-      WHERE ma_checkout >= DATE_SUB(NOW(), INTERVAL 7 DAY)`);
-    console.log("Weekly points reset");
+      INSERT INTO master_reward_point
+        (mrp_userId,
+        mrp_attendanceId,
+        mrp_pointsAdded,
+        mrp_source)
+      SELECT 
+        ma.ma_userId,
+        ma.ma_id,
+        ma.ma_pointsEarned,
+        'WEEKLY ATTENDANCE'
+      FROM master_attendance ma
+      WHERE YEARWEEK(ma.ma_checkout) = YEARWEEK(DATE_SUB(NOW(), INTERVAL 1 WEEK))
+      AND ma.ma_pointsEarned > 0
+      AND ma.ma_deleted = 0`);
+    
+    console.log("Weekly attendance points archived to rewards");
+    
   } catch (error) {
-    console.error("RESET FAILED: ", error);
+    console.error("Weekly CRON failed: ", error);
   }
 });
+
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

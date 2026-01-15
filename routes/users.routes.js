@@ -9,5 +9,6 @@ router.get("/", UserController.getDashboard);
 router.get("/profile", UserController.getProfile);
 router.put("/profile", UserController.updateProfile);
 router.get("/points", UserController.getPoints);
+router.get("/my-checkin", UserController.getMyOpenCheckin);
 
 module.exports = router;

@@ -90,7 +90,7 @@ class AdminController {
             LEFT JOIN master_user c ON mu.mu_createdById = c.mu_id
             LEFT JOIN master_user u ON mu.mu_updatedById = u.mu_id
             LEFT JOIN master_user d ON mu.mu_deletedById = d.mu_id
-            WHERE mu.mu_status != 'DELETED' -- delete this comment to see DELETED status
+            -- WHERE mu.mu_status != 'DELETED' -- delete this comment to see DELETED status
             ORDER BY mu.mu_createdAt DESC
             `;
 

@@ -256,6 +256,76 @@ class UserController {
             });
         }
     }
+
+
+    static async getMyOpenCheckin(req, res) {
+        try {
+            
+            if (!req.user?.id) {
+                return res.status(401).json({
+                    message: "Authentication required (Bearer token)"
+                });
+            }
+
+            // FIND USER CURRENT CHECKIN
+            const openCheckin = await mysql.Query(`
+                SELECT
+                    ma.ma_id,
+                    ma.ma_checkin,
+                    TIMESTAMPDIFF(MINUTE, ma.ma_checkin, NOW()) AS durationSoFar,
+                    ms.ms_sessionName,
+                    COALESCE(CONCAT(coach.mu_firstName, ' ', coach.mu_lastName), "FREE WORKOUT") AS coachName
+                    FROM master_attendance ma
+                    LEFT JOIN master_session ms ON ma.ma_sessionId = ms.ms_id
+                    LEFT JOIN master_user coach ON ms.ms_userId = coach.mu_id
+                    WHERE ma.ma_userId = ?
+                    AND ma.ma_checkout IS NULL
+                    AND ma.ma_deleted = 0
+                    ORDER BY ma.ma_checkin DESC
+                    LIMIT 1`, [req.user.id]);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_OPEN_CHECKIN_VIEWED",
+                "master_attendance",
+                openCheckin[0]?.ma_id || null,
+                null,
+                JSON.stringify({
+                    userId: req.user.id,
+                    hasOpenCheckin: !!openCheckin[0]
+                })
+            );
+
+            res.status(200).json({
+                message: "Open checkin status loaded",
+                data: openCheckin[0] || null
+            });
+
+        } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if(req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "USER_OPEN_CHECKIN_FAILED",
+                    "master_attendance",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
+            console.error("UserController.getMyOpenCheckin: ", error);
+            res.status(500).json({
+                message: "Server Error (500)"
+            });
+        }
+    }
 }
 
 module.exports = UserController;
