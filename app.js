@@ -6,6 +6,7 @@ var logger = require('morgan');
 const auth = require('./middleware/auth');
 const cron = require('node-cron');
 const mysql = require('./services/dbconnect.js');
+const rateLimit = require('express-rate-limit')
 require('dotenv').config();
 
 var adminRouter = require('./routes/admin.routes.js');
@@ -31,6 +32,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// RATE LIMIT
+app.use('/auth/login', rateLimit({
+  windowMs: 5 * 60 * 1000,   // 5 MINS
+  max: 5,                    // 5 ATTEMPTS PER IP
+  message: "Too many login attempts. Try again in 5 minutes."
+}));
 
 
 // PUBLIC ROUTES
