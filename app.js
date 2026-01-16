@@ -52,36 +52,37 @@ app.use('/rewards', auth, rewardsRouter);
 app.use('/equipment', auth, equipmentRouter);
 
 
-cron.schedule('0 0 * * 0', async()=>{
-  try {
+// CRON POINTS EXPIRY (?) not sure yet. old code. havent started.
+// cron.schedule('0 0 * * 0', async()=>{
+//   try {
     
-    const weeklyPoints = await mysql.Query(`
-      SELECT
-        ma_userId,
-        SUM(ma_pointsEarned) as total_weekly_points,
-        LEAST(SUM(ma_pointsEarned), 600) as capped_points
-      FROM master_attendance
-      WHERE YEARWEEK(ma_checkout) = YEARWEEK(DATE_SUB(NOW(), INTERVAL 1 WEEK))
-      AND ma_pointsEarned > 0
-      AND ma_deleted = 0
-      GROUP BY ma_userId
-      HAVING capped_points > 0`);
+//     const weeklyPoints = await mysql.Query(`
+//       SELECT
+//         ma_userId,
+//         SUM(ma_pointsEarned) as total_weekly_points,
+//         LEAST(SUM(ma_pointsEarned), 600) as capped_points
+//       FROM master_attendance
+//       WHERE YEARWEEK(ma_checkout) = YEARWEEK(DATE_SUB(NOW(), INTERVAL 1 WEEK))
+//       AND ma_pointsEarned > 0
+//       AND ma_deleted = 0
+//       GROUP BY ma_userId
+//       HAVING capped_points > 0`);
 
-    for (const user of weeklyPoints) {
-      await mysql.Query(`
-        INSERT INTO master_reward_point 
-          (mrp_userId,
-          mrp_pointsAdded,
-          mrp_source)
-        VALUES (?, ?, 'WEEKLY_REWARD')`, [user.ma_userId, user.capped_points]);
-    }
-    console.log(`Weekly rewards added: ${weeklyPoints.length} users,
-      ${weeklyPoints.reduce((sum, u)=> sum + u.capped_points, 0)} total points`);
+//     for (const user of weeklyPoints) {
+//       await mysql.Query(`
+//         INSERT INTO master_reward_point 
+//           (mrp_userId,
+//           mrp_pointsAdded,
+//           mrp_source)
+//         VALUES (?, ?, 'WEEKLY_REWARD')`, [user.ma_userId, user.capped_points]);
+//     }
+//     console.log(`Weekly rewards added: ${weeklyPoints.length} users,
+//       ${weeklyPoints.reduce((sum, u)=> sum + u.capped_points, 0)} total points`);
 
-  } catch (error) {
-    console.error("CRON Failed: ", error);
-  }
-});
+//   } catch (error) {
+//     console.error("CRON Failed: ", error);
+//   }
+// });
 
 
 // catch 404 and forward to error handler

@@ -250,11 +250,11 @@ class UserController {
 
             res.status(200).json({
                 message: "Points loaded",
+                totalRecords: history.length,
                 data: {
                     totalBalance: parseInt(result.totalBalance || 0),
                     totalEarned: parseInt(result.totalEarned || 0),
-                    history: history,
-                    totalRecords: history.length
+                    history: history
                 }
             });
 

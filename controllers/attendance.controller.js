@@ -112,9 +112,10 @@ class AttendanceController {
                     SELECT ms_status
                     FROM master_session
                     WHERE ms_id = ?`, [sessionId]);
-                if (session[0]?.ms_status !== "ACTIVE") {
+
+                if (!session[0] || session[0].ms_status !== "ACTIVE") {
                     return res.status(400).json({
-                        message: "Session not active"
+                        message: "Session not active or not found"
                     });
                 }
             }
@@ -219,8 +220,8 @@ class AttendanceController {
                     ma.ma_userId,
                     ma.ma_checkin,
                     TIMESTAMPDIFF(MINUTE, ma.ma_checkin, NOW()) AS duration,
-                    
-                    -- DAILY POINTS (TODAY'S COMPLETED CHECKOUTS)
+
+                    -- DAILY POINT
                     COALESCE((
                         SELECT SUM(ma2.ma_pointsEarned)
                         FROM master_attendance ma2
@@ -228,9 +229,10 @@ class AttendanceController {
                         AND ma2.ma_checkout IS NOT NULL
                         AND DATE(ma2.ma_checkout) = CURDATE()
                         AND ma2.ma_deleted = 0
+                        AND ma2.ma_id != ma.ma_id
                     ), 0) AS pointsEarnedToday,
-                    
-                    -- WEEKLY POINTS (THIS WEEK'S COMPLETED CHECKOUTS)
+
+                    -- WEEKLY POINT
                     COALESCE((
                         SELECT SUM(ma3.ma_pointsEarned)
                         FROM master_attendance ma3
@@ -238,7 +240,9 @@ class AttendanceController {
                         AND ma3.ma_checkout IS NOT NULL
                         AND YEARWEEK(ma3.ma_checkout) = YEARWEEK(NOW())
                         AND ma3.ma_deleted = 0
+                        AND ma3.ma_id != ma.ma_id
                     ), 0) AS pointsEarnedWeek
+
                 FROM master_attendance ma
                 WHERE ma.ma_id = ?
                 AND ma.ma_checkout IS NULL
@@ -285,13 +289,20 @@ class AttendanceController {
             const pointsThisWorkout = Math.min(duration || 0, remainingPoints, weeklyRemaining, 120);
 
             // UPDATE ATTENDANCE
-            const updateResult = await mysql.Query(`
-            UPDATE master_attendance
-            SET
-                ma_checkout = NOW(),
-                ma_duration = ?,
-                ma_pointsEarned = ?
-            WHERE ma_id = ?`, [duration || 0, pointsThisWorkout, ma_id]);
+            await mysql.Query(`
+                UPDATE master_attendance
+                SET ma_checkout = NOW(), ma_duration = ?, ma_pointsEarned = ?
+                WHERE ma_id = ?`, [duration || 0, pointsThisWorkout, ma_id]);
+
+            await mysql.Query(`
+                INSERT INTO master_reward_point
+                    (mrp_userId,
+                    mrp_attendanceId,
+                    mrp_pointsAdded,
+                    mrp_status,
+                    mrp_source,
+                    mrp_dateEarned)
+                VALUES (?, ?, ?, 'ACTIVE', 'WORKOUT', NOW())`, [userId, ma_id, pointsThisWorkout]);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
@@ -306,21 +317,22 @@ class AttendanceController {
                     duration_minutes: duration,
                     points_earned: pointsThisWorkout,
                     daily_total: pointsEarnedToday + pointsThisWorkout,
-                    weekly_total: pointsEarnedWeek + pointsThisWorkout
+                    weekly_total: pointsEarnedWeek + pointsThisWorkout,
+                    reward_point_inserted: true
                 })
             );
 
             res.status(200).json({
                 message: "Checkout success",
-                affectedRows: updateResult.affectedRows,
                 data: {
                     ma_id,
                     duration_minutes: duration,
                     points_earned: pointsThisWorkout,
                     points_today: pointsEarnedToday + pointsThisWorkout,
                     daily_remaining: remainingPoints - pointsThisWorkout,
-                    points_this_week: pointsEarnedWeek,
-                    weekly_remaining: weeklyRemaining
+                    points_this_week: pointsEarnedWeek + pointsThisWorkout,
+                    weekly_remaining: weeklyRemaining - pointsThisWorkout,
+                    reward_point_inserted: true
                 }
             });
 
@@ -333,7 +345,7 @@ class AttendanceController {
                     req.get("User-Agent"),
                     "ATTENDANCE_CHECKOUT_FAILED",
                     "master_attendance",
-                    ma_id,
+                    ma_id || null,
                     null,
                     null,
                     "FAILED",
