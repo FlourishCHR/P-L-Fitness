@@ -202,37 +202,61 @@ class UserController {
     static async getPoints(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if(!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
                 });
             }
 
-            const points = await mysql.Query(`
-                SELECT * FROM master_reward_point
-                WHERE mrp_userId = ?
-                ORDER BY mrp_dateEarned DESC
-                `, [req.user.id]);
+            // GET TOTALS
+            const totals = await mysql.Query(`
+            SELECT 
+                COALESCE(SUM(CASE WHEN mrp_status = 'ACTIVE'
+                THEN mrp_pointsAdded ELSE 0 END), 0) AS totalBalance,
+                COALESCE(SUM(mrp_pointsAdded), 0) AS totalEarned
+            FROM master_reward_point 
+            WHERE mrp_userId = ?`, [req.user.id]);
 
-                // SYSTEM LOGGING - SUCCESS
-                await SystemLogger.logAction(
-                    req.user.id,
-                    req.ip,
-                    req.get("User-Agent"),
-                    "USER_POINTS_VIEWED",
-                    "master_reward_point",
-                    null,
-                    null,
-                    JSON.stringify({
-                        userId: req.user.id,
-                        totalPointsRecords: points.length
-                    })
-                );
+            // GET HISTORY DATA
+            const history = await mysql.Query(`
+            SELECT
+                mrp_id,
+                mrp_pointsAdded,
+                mrp_status,
+                mrp_source,
+                mrp_dateEarned
+            FROM master_reward_point
+            WHERE mrp_userId = ?
+            ORDER BY mrp_dateEarned DESC`, [req.user.id]);
 
-                res.status(200).json({
-                    message: "Points history loaded",
-                    data: points
-                });
+            const result = totals[0];
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_POINTS_VIEWED",
+                "master_reward_point",
+                null,
+                null,
+                JSON.stringify({
+                    userId: req.user.id,
+                    totalBalance: result.totalBalance,
+                    totalEarned: result.totalEarned,
+                    totalRecords: history.length
+                })
+            );
+
+            res.status(200).json({
+                message: "Points loaded",
+                data: {
+                    totalBalance: parseInt(result.totalBalance || 0),
+                    totalEarned: parseInt(result.totalEarned || 0),
+                    history: history,
+                    totalRecords: history.length
+                }
+            });
 
         } catch (error) {
             // SYSTEM LOGGING - ERROR
@@ -251,12 +275,10 @@ class UserController {
             }
             console.error("UserController.getPoints: ", error);
             res.status(500).json({
-                message: "Server Error (500)",
-                data: error
+                message: "Server Error (500)"
             });
         }
     }
-
 
     static async getMyOpenCheckin(req, res) {
         try {
