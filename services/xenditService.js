@@ -10,8 +10,10 @@ class XenditService {
         try {
 
             const result = await Invoice.createInvoice({ 
-                data: invoiceData
-            });
+            requestParameters: { 
+                data: invoiceData 
+            }
+        });
             return result;
 
         } catch (error) {

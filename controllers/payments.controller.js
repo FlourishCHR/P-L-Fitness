@@ -171,22 +171,19 @@ class PaymentsController {
 
             // CREATE UNIQUE XENDIT EXTERNAL ID
             const externalID = `PLFIT_${membershipId}_${userId}_${Date.now()}`;
+            console.log("🔍 externalID:", externalID);
+
 
             // CREATE XENDIT INVOICE
             const xenditInvoice = await XenditService.createInvoice({
-                externalID,
-                payerEmail: req.user.email || `member${userId}@plfitness.ph`,
+                external_id: externalID,
+                payer_email: req.user.email || `member${userId}@plfitness.ph`,
                 description: `PLFitness Membership #${membershipId}`,
                 amount: Math.round(finalAmount * 100),
                 currency: 'PHP',
-                daysActive: 1,
-                successRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
-                failureRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
-                customer: {
-                    name: req.user.username || `Member ${userId}`,
-                    email: req.user.email || `member${userId}@plfitness.ph`,
-                    mobileNumber: req.user.phoneNumber || ''
-                }
+                days_active: 1,
+                success_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
+                failure_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
             });
 
             // SAVE PENDING PAYMENT TO DB
