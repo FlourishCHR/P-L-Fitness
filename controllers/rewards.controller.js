@@ -282,145 +282,145 @@ class RewardsController {
     }
 
 
-    // POST /rewards/redeem-voucher
-    static async redeemVoucher(req, res) {
-        try {
+    // // POST /rewards/redeem-voucher
+    // static async redeemVoucher(req, res) {
+    //     try {
             
-            if (!req.user?.id) {
-                return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
-                });
-            }
+    //         if (!req.user?.id) {
+    //             return res.status(401).json({
+    //                 message: "Authentication required (Bearer token)"
+    //             });
+    //         }
 
-            const { voucherId } = req.body;
+    //         const { voucherId } = req.body;
 
-            if (!voucherId) {
-                return res.status(400).json({
-                    message: "voucherId required"
-                });
-            }
+    //         if (!voucherId) {
+    //             return res.status(400).json({
+    //                 message: "voucherId required"
+    //             });
+    //         }
 
-            const userId = req.user.id;
+    //         const userId = req.user.id;
 
-            // CHECK USER POINT BALANCE
-            const pointsCheck = await mysql.Query(`
-                SELECT COALESCE(SUM(mrp_pointsAdded), 0) AS totalPoints
-                FROM master_reward_point
-                WHERE mrp_userId = ?
-                AND mrp_status = 'ACTIVE'`, [userId]);
+    //         // CHECK USER POINT BALANCE
+    //         const pointsCheck = await mysql.Query(`
+    //             SELECT COALESCE(SUM(mrp_pointsAdded), 0) AS totalPoints
+    //             FROM master_reward_point
+    //             WHERE mrp_userId = ?
+    //             AND mrp_status = 'ACTIVE'`, [userId]);
 
-            const userPoints = pointsCheck[0].totalPoints;
+    //         const userPoints = pointsCheck[0].totalPoints;
 
-            // GET VOUCHER DETAILS
-            const voucher = await mysql.Query(`
-                SELECT
-                    mv_code,
-                    mv_pointsRequired,
-                    mv_status,
-                    mv_maxUses,
-                    mv_useCount
-                FROM master_voucher
-                WHERE mv_id = ?`, [voucherId]);
+    //         // GET VOUCHER DETAILS
+    //         const voucher = await mysql.Query(`
+    //             SELECT
+    //                 mv_code,
+    //                 mv_pointsRequired,
+    //                 mv_status,
+    //                 mv_maxUses,
+    //                 mv_useCount
+    //             FROM master_voucher
+    //             WHERE mv_id = ?`, [voucherId]);
 
-            // VALIDATION
-            if (!voucher.length) {
-                return res.status(404).json({
-                    message: "Voucher not found"
-                });
-            }
+    //         // VALIDATION
+    //         if (!voucher.length) {
+    //             return res.status(404).json({
+    //                 message: "Voucher not found"
+    //             });
+    //         }
 
-            const { mv_code, mv_pointsRequired, mv_status,
-                mv_maxUses, mv_useCount } = voucher[0];
-
-
-            // VOUCHER VALIDATIONS
-            if (mv_status != "ACTIVE") {
-                return res.status(400).json({
-                    message: "Voucher inactive"
-                });
-            }
-
-            if (mv_useCount >= mv_maxUses) {
-                return res.status(400).json({
-                    message: "Maximum redemption reached"
-                });
-            }
-
-            if (userPoints < mv_pointsRequired) {
-                return res.status(400).json({
-                    message: `Need ${mv_pointsRequired} points. You have ${userPoints}.`
-                });
-            }
-
-            // ATOMIC TRANSACTION: MARK POINTS  REDEEMED + CLAIM VOUCHER
-            await mysql.Query(`
-                UPDATE master_reward_point
-                SET
-                    mrp_status = 'REDEEMED'
-                WHERE mrp_userId = ?
-                AND mrp_status = 'ACTIVE'
-                LIMIT ?`, [userId, mv_pointsRequired]);
-
-            // CLAIM
-            const voucherResult = await mysql.Query(`
-                UPDATE master_voucher
-                SET
-                    mv_useCount = mv_useCount + 1,
-                    mv_userId = ?
-                WHERE mv_id = ?`, [userId, voucherId]);
+    //         const { mv_code, mv_pointsRequired, mv_status,
+    //             mv_maxUses, mv_useCount } = voucher[0];
 
 
-            // SYSTEM LOGGING - SUCCESS
-            await SystemLogger.logAction(
-                req.user.id,
-                req.ip,
-                req.get("User-Agent"),
-                "VOUCHER_REDEEMED",
-                "master_reward_point",
-                null,
-                null,
-                JSON.stringify({
-                    userId,
-                    voucherId,
-                    voucherCode: mv_code,
-                    pointsSpent: mv_pointsRequired,
-                    remainingPoints: userPoints - mv_pointsRequired
-                })
-            );
+    //         // VOUCHER VALIDATIONS
+    //         if (mv_status != "ACTIVE") {
+    //             return res.status(400).json({
+    //                 message: "Voucher inactive"
+    //             });
+    //         }
 
-            res.status(200).json({
-                message: "Voucher redeemed successfully",
-                data: {
-                    voucherId,
-                    voucherCode: mv_code,
-                    pointsSpent: mv_pointsRequired,
-                    remainingPoints: userPoints - mv_pointsRequired
-                }
-            });
+    //         if (mv_useCount >= mv_maxUses) {
+    //             return res.status(400).json({
+    //                 message: "Maximum redemption reached"
+    //             });
+    //         }
 
-        } catch (error) {
-            // SYSTEM LOGGING - ERROR
-            if(req.user?.id) {
-                await SystemLogger.logAction(
-                    req.user.id,
-                    req.ip,
-                    req.get("User-Agent"),
-                    "VOUCHER_REDEEMED_FAILED",
-                    "master_reward_point",
-                    null,
-                    null,
-                    null,
-                    "FAILED",
-                    error.message
-                );
-            }
-            console.error("RewardsController.redeemVoucher: ", error);
-            res.status(500).json({
-                message: "Server Error (500)",
-                data: error
-            });
-        }
-    }
+    //         if (userPoints < mv_pointsRequired) {
+    //             return res.status(400).json({
+    //                 message: `Need ${mv_pointsRequired} points. You have ${userPoints}.`
+    //             });
+    //         }
+
+    //         // ATOMIC TRANSACTION: MARK POINTS  REDEEMED + CLAIM VOUCHER
+    //         await mysql.Query(`
+    //             UPDATE master_reward_point
+    //             SET
+    //                 mrp_status = 'REDEEMED'
+    //             WHERE mrp_userId = ?
+    //             AND mrp_status = 'ACTIVE'
+    //             LIMIT ?`, [userId, mv_pointsRequired]);
+
+    //         // CLAIM
+    //         const voucherResult = await mysql.Query(`
+    //             UPDATE master_voucher
+    //             SET
+    //                 mv_useCount = mv_useCount + 1,
+    //                 mv_userId = ?
+    //             WHERE mv_id = ?`, [userId, voucherId]);
+
+
+    //         // SYSTEM LOGGING - SUCCESS
+    //         await SystemLogger.logAction(
+    //             req.user.id,
+    //             req.ip,
+    //             req.get("User-Agent"),
+    //             "VOUCHER_REDEEMED",
+    //             "master_reward_point",
+    //             null,
+    //             null,
+    //             JSON.stringify({
+    //                 userId,
+    //                 voucherId,
+    //                 voucherCode: mv_code,
+    //                 pointsSpent: mv_pointsRequired,
+    //                 remainingPoints: userPoints - mv_pointsRequired
+    //             })
+    //         );
+
+    //         res.status(200).json({
+    //             message: "Voucher redeemed successfully",
+    //             data: {
+    //                 voucherId,
+    //                 voucherCode: mv_code,
+    //                 pointsSpent: mv_pointsRequired,
+    //                 remainingPoints: userPoints - mv_pointsRequired
+    //             }
+    //         });
+
+    //     } catch (error) {
+    //         // SYSTEM LOGGING - ERROR
+    //         if(req.user?.id) {
+    //             await SystemLogger.logAction(
+    //                 req.user.id,
+    //                 req.ip,
+    //                 req.get("User-Agent"),
+    //                 "VOUCHER_REDEEMED_FAILED",
+    //                 "master_reward_point",
+    //                 null,
+    //                 null,
+    //                 null,
+    //                 "FAILED",
+    //                 error.message
+    //             );
+    //         }
+    //         console.error("RewardsController.redeemVoucher: ", error);
+    //         res.status(500).json({
+    //             message: "Server Error (500)",
+    //             data: error
+    //         });
+    //     }
+    // }
 }
 
 module.exports = RewardsController

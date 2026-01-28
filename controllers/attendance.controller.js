@@ -272,6 +272,18 @@ class AttendanceController {
                     pointsEarnedWeek
                 } = result[0];
 
+
+                const dailyExpCheck = await mysql.Query(`
+                    SELECT COALESCE(SUM(mex_experiencePoints), 0) as totalDailyExp
+                    FROM master_experience mex
+                    JOIN master_attendance ma ON mex.mex_attendanceId = ma.ma_id
+                    WHERE mex.mex_userId = ?
+                    AND DATE(ma.ma_checkout) = CURDATE()
+                    AND mex.mex_status = 'ACTIVE'`, [userId]);
+
+                const dailyBaseExpUsed = dailyExpCheck[0].totalDailyExp;
+                const baseExpAvailable = Math.max(0, 10 - dailyBaseExpUsed);
+
             // USER OWNERSHIP VALIDATION
             if (userId != req.user.id && req.user.role !== "ADMIN") {
                 return res.status(403).json({
@@ -340,6 +352,7 @@ class AttendanceController {
 
             const pointsThisWorkout = Math.min(duration || 0, remainingPoints, weeklyRemaining, 120);
             const workoutExp = Math.min(duration || 0, 50, remainingPoints, weeklyRemaining);
+            const totalExp = baseExpAvailable + workoutExp;
 
             // UPDATE ATTENDANCE
             await mysql.Query(`
@@ -358,7 +371,7 @@ class AttendanceController {
                     mrp_dateEarned)
                 VALUES (?, ?, ?, 'ACTIVE', 'WORKOUT', NOW())`, [userId, ma_id, pointsThisWorkout]);
 
-            if (workoutExp > 0) {
+            if (totalExp > 0) {
                 await mysql.Query(`
                     INSERT INTO master_experience
                         (mex_userId,
@@ -367,7 +380,7 @@ class AttendanceController {
                         mex_totalExperience,
                         mex_status)
                     VALUES (?, ?, ?, ?, 'ACTIVE')
-                    `, [userId, ma_id, workoutExp, workoutExp])
+                    `, [userId, ma_id, totalExp, totalExp])
             }
 
             // SYSTEM LOGGING - PREMIUM SUCCESS
@@ -382,8 +395,9 @@ class AttendanceController {
                 JSON.stringify({
                     duration_minutes: duration,
                     points_earned: pointsThisWorkout,
-                    workout_exp: workoutExp,
-                    total_exp_attendance: 10 + (workoutExp || 0),
+                    workout_exp: totalExp,
+                    total_exp_attendance: totalExp,
+                    base_exp_used: baseExpAvailable,
                     daily_total: pointsEarnedToday + pointsThisWorkout,
                     weekly_total: pointsEarnedWeek + pointsThisWorkout,
                     reward_point_inserted: true
@@ -395,9 +409,10 @@ class AttendanceController {
                 data: {
                     ma_id,
                     duration_minutes: duration,
-                    workout_exp: workoutExp,
-                    total_exp_this_attendance: 10 + (workoutExp || 0),
+                    workout_exp: totalExp,
+                    total_exp_attendance: totalExp,
                     points_earned: pointsThisWorkout,
+                    base_exp_remaining: Math.max(0, 10 - dailyBaseExpUsed),
                     points_today: pointsEarnedToday + pointsThisWorkout,
                     daily_remaining: remainingPoints - pointsThisWorkout,
                     points_this_week: pointsEarnedWeek + pointsThisWorkout,
