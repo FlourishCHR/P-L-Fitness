@@ -10,12 +10,17 @@ const rateLimit = require('express-rate-limit')
 require('dotenv').config();
 
 var adminRouter = require('./routes/admin.routes.js');
+var achievementRouter = require('./routes/achievements.routes.js');
 var attendanceRouter = require('./routes/attendance.routes.js');
 var authRouter = require('./routes/auth.routes.js');
 var equipmentRouter = require('./routes/equipment.routes.js')
 var indexRouter = require('./routes/index');
 var membershipsRouter = require('./routes/memberships.routes.js');
 var paymentsRouter = require('./routes/payments.routes.js');
+var productCategoryRouter = require('./routes/product-category.routes.js');
+var productsRouter = require('./routes/products.routes.js');
+var rankRouter = require('./routes/rank.routes.js');
+var experienceRouter = require('./routes/experience.routes.js');
 var rewardsRouter = require('./routes/rewards.routes.js');
 var sessionsRouter = require('./routes/sessions.routes.js');
 var usersRouter = require('./routes/users.routes.js');
@@ -53,6 +58,11 @@ app.use('/admin', auth, adminRouter);
 app.use('/users', auth, usersRouter);
 app.use('/memberships', auth, membershipsRouter);
 app.use('/payments', auth, paymentsRouter);
+app.use('/product-categories', auth, productCategoryRouter);
+app.use('/products', auth, productsRouter);
+app.use('/ranks', auth, rankRouter);
+app.use('/experience', auth, experienceRouter);
+app.use('/achievements', auth, achievementRouter);
 app.use('/sessions', auth, sessionsRouter);
 app.use('/attendance', auth, attendanceRouter);
 app.use('/vouchers', auth, vouchersRouter);

@@ -22,15 +22,21 @@ class UserController {
 
             const user = await mysql.Query(`
                 SELECT
-                    mu_username,
-                    mu_firstName,
-                    mu_lastName,
-                    mu_phoneNumber,
-                    mu_email,
-                    mu_role
-                FROM master_user
-                WHERE mu_id = ?
-                `, [req.user.id]);
+                    mu.mu_username,
+                    mu.mu_firstName,
+                    mu.mu_lastName,
+                    mu.mu_phoneNumber,
+                    mu.mu_email,
+                    mu.mu_role,
+                    mm.mm_planType,
+                    COALESCE(mus.mus_totalExperience, 0) AS totalExperience,
+                    COALESCE(r.mr_name, 'BRONZE') AS currentRank,
+                    r.mr_icon AS rankIcon
+                FROM master_user mu
+                LEFT JOIN master_membership mm ON mu.mu_id = mm.mm_userId AND mm.mm_status = 'ACTIVE'
+                LEFT JOIN master_user_stats mus ON mu.mu_id = mus.mus_userId
+                LEFT JOIN master_rank r ON mus.mus_currentRankId = r.mr_id
+                WHERE mu.mu_id = ?`, [req.user.id]);
 
 
                 if (!user.length || !user[0]) {
@@ -50,7 +56,9 @@ class UserController {
                     null,
                     JSON.stringify({
                         userId: req.user.id,
-                        username: user[0].mu_username
+                        username: user[0].mu_username,
+                        membership: user[0].mm_planType,
+                        rank: user[0].currentRank
                     })
                 );
 

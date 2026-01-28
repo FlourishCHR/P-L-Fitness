@@ -199,9 +199,10 @@ class RewardsController {
                 });
             }
 
-            const { userId, ma_pointsEarned } = attendance[0];
+            const userId = attendance[0].ma_userId;
+            const ma_pointsEarned_final = attendance[0].ma_pointsEarned;
 
-            if(!ma_pointsEarned || ma_pointsEarned <= 0) {
+           if(!ma_pointsEarned_final || ma_pointsEarned_final <= 0) {
                 return res.status(400).json({
                     message: "No points earned from this attendance"
                 });
@@ -227,7 +228,7 @@ class RewardsController {
                 mrp_source)
             VALUES (?, ?, ?, 'ATTENDANCE')`;
 
-            const result = await mysql.Query(sql, [userId, ma_id, ma_pointsEarned]);
+            const result = await mysql.Query(sql, [userId, ma_id, ma_pointsEarned_final]);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
@@ -241,7 +242,7 @@ class RewardsController {
                 JSON.stringify({
                     ma_id,
                     userId,
-                    pointsConverted: ma_pointsEarned,
+                    pointsConverted: ma_pointsEarned_final,
                     rewardId: result.insertId
                 })
             );
@@ -251,7 +252,7 @@ class RewardsController {
                 data: {
                     ma_id,
                     userId,
-                    pointsConverted: ma_pointsEarned,
+                    pointsConverted: ma_pointsEarned_final,
                     rewardId: result.insertId
                 }
             });

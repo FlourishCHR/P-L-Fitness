@@ -236,6 +236,138 @@ class AuthController {
             });
         }
     }
+
+
+    // POST /auth/register
+    static async register(req, res) {
+        try {
+            
+            const { email, username, password,
+                firstName, lastName, phoneNumber } = req.body;
+
+            // VALIDATION
+            if (!email || !username || !password || !firstName || !lastName) {
+                return res.status(400).json({
+                    message: "email, username, password, firstName, lastName required"
+                });
+            }
+
+            if (password.length < 8) {
+                return res.status(400).json({
+                    message: "Password must be at least 8 characters"
+                });
+            }
+
+            // CHECK UNIQUE
+            const emailCheck = await mysql.Query(`
+                SELECT 1 FROM master_user
+                WHERE mu_email = ?`, [email]);
+            if (emailCheck.length > 0) {
+                return res.status(409).json({
+                    message: "Email already exists"
+                });
+            }
+
+            const usernameCheck = await mysql.Query(`
+                SELECT 1 FROM master_user
+                WHERE mu_username = ?`, [username]);
+            if (usernameCheck.length > 0) {
+                return res.status(409).json({
+                    message: "Username already exists"
+                });
+            }
+                
+            // CREATE USER
+            const hashedPassword = await bcryptjs.hash(password.trim(), 12);
+            const userResult = await mysql.Query(`
+                INSERT INTO master_user
+                    (mu_email,
+                    mu_username,
+                    mu_password,
+                    mu_firstName,
+                    mu_lastName,
+                    mu_phoneNumber,
+                    mu_role,
+                    mu_status,
+                    mu_createdById)
+            VALUES (?, ?, ?, ?, ?, ?, 'MEMBER', 'ACTIVE', NULL)`,
+            [email.trim(), username.trim(), hashedPassword, firstName.trim(),
+            lastName.trim(), phoneNumber || null]);
+
+            const userId = userResult.insertId;
+
+            // CREATE BASIC MEMBERSHIP
+            await mysql.Query(`
+                INSERT INTO master_membership
+                    (mm_userId,
+                    mm_startDate,
+                    mm_planType,
+                    mm_status)
+                VALUES (?, CURDATE(), 'BASIC', 'ACTIVE')`,
+            [userId]);
+
+            // CREATE INITIAL EXPERIENCE
+            await mysql.Query(`
+                INSERT INTO master_experience
+                    (mex_userId,
+                    mex_experiencePoints,
+                    mex_totalExperience,
+                    mex_status)
+                VALUES (?, 0, 0, 'ACTIVE')`, [userId]);
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                null,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_REGISTERED",
+                "master_user",
+                userId,
+                null,
+                JSON.stringify({
+                    username: username.trim(),
+                    email: email.trim(),
+                    createdTables: ["master_user", "master_membership", "master_experience"]
+                })
+            );
+
+            res.status(201).json({
+                message: "Registration successful",
+                data: {
+                    userId,
+                    username: username.trim(),
+                    email: email.trim(),
+                    membership: "BASIC",
+                    experience: 0,
+                    rank: "BRONZE"
+                }
+            });
+
+        } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            await SystemLogger.logAction(
+                null,
+                req.ip,
+                req.get("User-Agent"),
+                "USER_REGISTRATION_FAILED",
+                "master_user",
+                null,
+                null,
+                null,
+                "FAILED",
+                error.message
+            );
+            if (error.code === "ER_DUP_ENTRY") {
+                return res.status(409).json({
+                    message: "Duplicated entry (email/username already exists)"
+                });
+            }
+            console.error("AuthController.register: ", error);
+            res.status(500).json({
+                message: "Server Error (500)"
+            });
+        }
+    }
 }
 
 module.exports = AuthController;

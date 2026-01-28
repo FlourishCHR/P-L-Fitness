@@ -82,9 +82,9 @@ class MembershipController {
     static async createMembership(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
+                    message: "Admin authentication required (Bearer token)"
                 });
             }
 

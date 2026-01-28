@@ -214,6 +214,17 @@ class AttendanceController {
                 });
             }
 
+            // CHECK MEMBERSHIP
+            const membership = await mysql.Query(`
+                SELECT mm_planType
+                FROM master_membership
+                WHERE mm_userId = ?
+                AND mm_status = "ACTIVE"
+                LIMIT 1`, [req.user.id]);
+
+            const isPremium = membership[0]?.mm_planType === "PREMIUM";
+            const isBasic = membership[0]?.mm_planType === "BASIC";
+
             const result = await mysql.Query(`
                 SELECT
                     ma.ma_id,
@@ -268,7 +279,48 @@ class AttendanceController {
                 });
             }
 
-            // Points calculation
+            // BASIC USER
+            if (isBasic) {
+                const duration = result[0].duration;
+
+                await mysql.Query(`
+                    UPDATE master_attendance
+                    SET
+                        ma_checkout = NOW(),
+                        ma_duration = ?,
+                        ma_pointsEarned = 0
+                    WHERE ma_id = ?`, [duration, ma_id]);
+
+                // SYSTEM LOGGING - BASIC SUCCESS
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "ATTENDANCE_BASIC_CHECKOUT",
+                    "master_attendance",
+                    ma_id,
+                    null,
+                    JSON.stringify({
+                        duration_minutes: duration,
+                        points_earned: 0,
+                        exp_earned: 0,
+                        membership: "BASIC (LIMITED)"
+                    })
+                );
+                return res.status(200).json({
+                    message: "Checkout success (BASIC - no points/EXP earned)",
+                    data: {
+                        ma_id,
+                        duration_minutes: duration,
+                        points_earned: 0,
+                        exp_earned: 0,
+                        membership: "BASIC",
+                        note: "Upgrade to PREMIUM for points and experience!"
+                    }
+                });
+            }
+
+            // PREMIUM: POINTS CALCULATION
             const remainingPoints = 120 - pointsEarnedToday;
             const weeklyRemaining = 600 - pointsEarnedWeek;
 
@@ -287,6 +339,7 @@ class AttendanceController {
             }
 
             const pointsThisWorkout = Math.min(duration || 0, remainingPoints, weeklyRemaining, 120);
+            const workoutExp = Math.min(duration || 0, 50, remainingPoints, weeklyRemaining);
 
             // UPDATE ATTENDANCE
             await mysql.Query(`
@@ -294,6 +347,7 @@ class AttendanceController {
                 SET ma_checkout = NOW(), ma_duration = ?, ma_pointsEarned = ?
                 WHERE ma_id = ?`, [duration || 0, pointsThisWorkout, ma_id]);
 
+            // PREMIUM: ADD REWARD POINTS
             await mysql.Query(`
                 INSERT INTO master_reward_point
                     (mrp_userId,
@@ -304,7 +358,19 @@ class AttendanceController {
                     mrp_dateEarned)
                 VALUES (?, ?, ?, 'ACTIVE', 'WORKOUT', NOW())`, [userId, ma_id, pointsThisWorkout]);
 
-            // SYSTEM LOGGING - SUCCESS
+            if (workoutExp > 0) {
+                await mysql.Query(`
+                    INSERT INTO master_experience
+                        (mex_userId,
+                        mex_attendanceId,
+                        mex_experiencePoints,
+                        mex_totalExperience,
+                        mex_status)
+                    VALUES (?, ?, ?, ?, 'ACTIVE')
+                    `, [userId, ma_id, workoutExp, workoutExp])
+            }
+
+            // SYSTEM LOGGING - PREMIUM SUCCESS
             await SystemLogger.logAction(
                 req.user.id,
                 req.ip,
@@ -316,6 +382,8 @@ class AttendanceController {
                 JSON.stringify({
                     duration_minutes: duration,
                     points_earned: pointsThisWorkout,
+                    workout_exp: workoutExp,
+                    total_exp_attendance: 10 + (workoutExp || 0),
                     daily_total: pointsEarnedToday + pointsThisWorkout,
                     weekly_total: pointsEarnedWeek + pointsThisWorkout,
                     reward_point_inserted: true
@@ -327,11 +395,14 @@ class AttendanceController {
                 data: {
                     ma_id,
                     duration_minutes: duration,
+                    workout_exp: workoutExp,
+                    total_exp_this_attendance: 10 + (workoutExp || 0),
                     points_earned: pointsThisWorkout,
                     points_today: pointsEarnedToday + pointsThisWorkout,
                     daily_remaining: remainingPoints - pointsThisWorkout,
                     points_this_week: pointsEarnedWeek + pointsThisWorkout,
                     weekly_remaining: weeklyRemaining - pointsThisWorkout,
+                    membership: "PREMIUM",
                     reward_point_inserted: true
                 }
             });

@@ -89,7 +89,7 @@ class VouchersController {
     static async createVoucher(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== 'ADMIN') {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
                 });
@@ -183,7 +183,7 @@ class VouchersController {
     static async updateVoucher(req, res) {
         try {
             
-            if (!req.user?.id) {
+            if (!req.user?.id || req.user.role !== 'ADMIN') {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
                 });
@@ -301,6 +301,19 @@ class VouchersController {
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
+                });
+            }
+
+            const membership = await mysql.Query(`
+                SELECT mm_planType
+                FROM master_membership
+                WHERE mm_userId = ?
+                AND mm_status = "ACTIVE"
+                LIMIT 1`, [req.user.id]);
+
+            if (membership[0]?.mm_planType !== "PREMIUM") {
+                return res.status(403).json({
+                    message: "PREMIUM membership required to redeem vouchers"
                 });
             }
 
