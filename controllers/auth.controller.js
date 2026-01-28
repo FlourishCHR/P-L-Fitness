@@ -1,7 +1,7 @@
 const mysql = require('../services/dbconnect.js');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const SystemLogger = require('../services/systemlogger.js');
+const SystemLogger = require('../services/systemLogger.js');
 
 class AuthController {
     // GET /auth/ -- PAGE
