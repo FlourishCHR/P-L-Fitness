@@ -7,9 +7,6 @@ const connection = mysql.createConnection({
   password: process.env._PASSWORD_ADMIN,
   database: process.env._DATABASE_ADMIN,
   timezone: "PST",
-  ssl: {
-    rejectUnauthorized: true,
-  },
 });
 
 exports.CheckConnection = () => {

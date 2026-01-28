@@ -2,9 +2,9 @@ var express = require('express');
 var router = express.Router();
 const mysql = require('../services/dbconnect.js');
 
-/* GET HOMEPAGE - Serve React app */
+/* GET HOMEPAGE. */
 router.get('/', function(req, res, next) {
-  res.sendFile('index.html', { root: './build' });
+  res.render('index', { title: 'Express' });
 });
 
 
