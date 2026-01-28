@@ -1,6 +1,6 @@
 const mysql = require('../services/dbconnect.js');
 const SystemLogger = require('../services/systemLogger.js');
-const XenditService = require('../services/XenditService.js');
+const XenditService = require('../services/xenditService.js');
 
 class PaymentsController {
     // GET /payments/ DASHBOARD PAGE
@@ -176,14 +176,14 @@ class PaymentsController {
 
             // CREATE XENDIT INVOICE
             const xenditInvoice = await XenditService.createInvoice({
-                external_id: externalID,
-                payer_email: req.user.email || `member${userId}@plfitness.ph`,
+                externalID: externalID,
+                payerEmail: req.user.email || `member${userId}@plfitness.ph`,
                 description: `PLFitness Membership #${membershipId}`,
                 amount: Math.round(finalAmount * 100),
                 currency: 'PHP',
-                days_active: 1,
-                success_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
-                failure_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
+                daysActive: 1,
+                successRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
+                failureRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
             });
 
             // SAVE PENDING PAYMENT TO DB
