@@ -22,13 +22,20 @@ class UserController {
 
             const user = await mysql.Query(`
                 SELECT
+                    mu.mu_id,
                     mu.mu_username,
                     mu.mu_firstName,
                     mu.mu_lastName,
+                    CONCAT(mu.mu_firstName, ' ', mu.mu_lastName) AS name,
+                    CONCAT('PL2024-', LPAD(mu.mu_id, 6, '0')) AS memberId,
                     mu.mu_phoneNumber,
                     mu.mu_email,
                     mu.mu_role,
+                    mu.mu_createdAt AS joinDate,
                     mm.mm_planType,
+                    mm.mm_planType AS membershipType,
+                    mm.mm_endDate AS expiryDate,
+                    mm.mm_nextDueDate AS nextBilling,
                     COALESCE(mus.mus_totalExperience, 0) AS totalExperience,
                     COALESCE(r.mr_name, 'BRONZE') AS currentRank,
                     r.mr_icon AS rankIcon

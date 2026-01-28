@@ -9,6 +9,9 @@ const mysql = require('./services/dbconnect.js');
 const rateLimit = require('express-rate-limit')
 require('dotenv').config();
 
+// Initialize MySQL connection
+mysql.CheckConnection();
+
 var adminRouter = require('./routes/admin.routes.js');
 var achievementRouter = require('./routes/achievements.routes.js');
 var attendanceRouter = require('./routes/attendance.routes.js');
