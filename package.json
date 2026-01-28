@@ -5,8 +5,11 @@
   "scripts": {
     "start": "node ./bin/www",
     "dev": "nodemon ./bin/www",
-    "dev:client": "vite",
-    "dev:full": "concurrently \"npm run dev\" \"npm run dev:client\""
+    "dev:frontend": "vite",
+    "dev:full": "concurrently \"npm run dev\" \"npm run dev:frontend\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "init:access-logs": "node scripts/init-access-logs.js"
   },
   "dependencies": {
     "@radix-ui/react-accordion": "^1.2.3",
@@ -65,7 +68,8 @@
     "sonner": "^2.0.3",
     "sweetalert2": "^11.26.10",
     "tailwind-merge": "^2.5.4",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "xendit-node": "^7.0.0"
   },
   "devDependencies": {
     "@types/react": "^18.3.3",

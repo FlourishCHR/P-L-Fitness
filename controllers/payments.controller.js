@@ -1,5 +1,6 @@
 const mysql = require('../services/dbconnect.js');
 const SystemLogger = require('../services/systemLogger.js');
+const XenditService = require('../services/XenditService.js');
 
 class PaymentsController {
     // GET /payments/ DASHBOARD PAGE
@@ -85,34 +86,33 @@ class PaymentsController {
 
 
     // POST /payments/insert
-     static async createPayment(req, res) {
+    static async createPayment(req, res) {
         try {
-            
+
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
                 });
             }
 
-            const { membershipId, userId, originalAmount, voucherCode, mop, status } = req.body;
+            const { membershipId, userId, originalAmount, voucherCode } = req.body;
 
             // VALIDATION
-            if (!membershipId || !userId || !originalAmount || !mop) {
+            if (!membershipId || !userId || !originalAmount) {
                 return res.status(400).json({
-                    message: "membershipId, userId, originalAmount, mop required",
-                    validMOP: ["CASH", "CREDIT", "OTHER"],
+                    message: "membershipId, userId, originalAmount required",
                     validStatus: ["PAID", "PENDING", "CANCELLED", "REFUNDED"]
                 });
             }
 
+            // VOUCHER PROCESSING
             let voucherId = null;
             let discountAmount = 0;
             let finalAmount = parseFloat(originalAmount);
 
-            // VOUCHER PROCESSING
             if (voucherCode) {
                 const voucherResult = await mysql.Query(`
-                    SELECT 
+                    SELECT
                         mv_id,
                         mv_discountType,
                         mv_value,
@@ -123,7 +123,8 @@ class PaymentsController {
                         mv_maxUses,
                         mv_userId
                     FROM master_voucher 
-                    WHERE mv_code = ? AND mv_status = 'ACTIVE' FOR UPDATE`, [voucherCode]);
+                    WHERE mv_code = ?
+                    AND mv_status = 'ACTIVE' FOR UPDATE`, [voucherCode]);
 
                 if (voucherResult.length > 0) {
                     const voucher = voucherResult[0];
@@ -158,34 +159,60 @@ class PaymentsController {
 
                     finalAmount = parseFloat((parseFloat(originalAmount) - discountAmount).toFixed(2));
                     voucherId = voucher.mv_id;
-
-                    // await mysql.Query(`
-                    //     UPDATE master_voucher 
-                    //     SET mv_useCount = mv_useCount + 1, mv_userId = ?
-                    //     WHERE mv_id = ?`, [userId, voucher.mv_id]);
                 }
             }
 
+            // XENDIT VALIDATION
+            if (!process.env.XENDIT_SECRET_KEY) {
+            return res.status(500).json({
+                message: "Xendit configuration missing"
+                });
+            }
+
+            // CREATE UNIQUE XENDIT EXTERNAL ID
+            const externalID = `PLFIT_${membershipId}_${userId}_${Date.now()}`;
+
+            // CREATE XENDIT INVOICE
+            const xenditInvoice = await XenditService.createInvoice({
+                externalID,
+                payerEmail: req.user.email || `member${userId}@plfitness.ph`,
+                description: `PLFitness Membership #${membershipId}`,
+                amount: Math.round(finalAmount * 100),
+                currency: 'PHP',
+                daysActive: 1,
+                successRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
+                failureRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
+                customer: {
+                    name: req.user.username || `Member ${userId}`,
+                    email: req.user.email || `member${userId}@plfitness.ph`,
+                    mobileNumber: req.user.phoneNumber || ''
+                }
+            });
+
+            // SAVE PENDING PAYMENT TO DB
             const result = await mysql.Query(`
                 INSERT INTO master_payment
                     (mp_membershipId,
                     mp_userId,
                     mp_voucherId,
-                    mp_originalAmount, 
+                    mp_originalAmount,
                     mp_discountAmount,
                     mp_finalAmount,
                     mp_mop,
-                    mp_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, 
+                    mp_status,
+                    mp_notes,
+                    mp_paymentDate)
+                VALUES (?, ?, ?, ?, ?, ?, 'XENDIT', 'PENDING_XENDIT', ?, NULL)`,
                 [membershipId, userId, voucherId, parseFloat(originalAmount), 
-                 discountAmount, finalAmount, mop, status || "PENDING"]);
-            
+                discountAmount, finalAmount, `Xendit Invoice: ${xenditInvoice.id}`]
+            );
+
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
                 req.user.id,
                 req.ip,
                 req.get("User-Agent"),
-                "PAYMENT_CREATED",
+                "XENDIT_PAYMENT_CREATED",
                 "master_payment",
                 result.insertId,
                 null,
@@ -193,18 +220,20 @@ class PaymentsController {
                     membershipId,
                     userId,
                     originalAmount,
-                    voucherCode, 
+                    voucherCode,
                     discountAmount,
                     finalAmount,
-                    mop,
-                    status: status || "PENDING"
+                    externalID,
+                    xenditInvoiceId: xenditInvoice.id
                 })
             );
 
             res.status(201).json({
-                message: "Payment created successfully",
+                message: "Xendit payment created successfully",
                 data: {
                     id: result.insertId,
+                    xenditInvoiceUrl: xenditInvoice.invoice_url,
+                    externalID,
                     originalAmount: parseFloat(originalAmount),
                     discountAmount,
                     finalAmount,
@@ -213,13 +242,13 @@ class PaymentsController {
             });
 
         } catch (error) {
-            // SYSTEM LOGGING - FAILED
-            if(req.user?.id) {
+            // SYSTEM LOGGING - ERROR
+            if (req.user?.id) {
                 await SystemLogger.logAction(
                     req.user.id,
                     req.ip,
                     req.get("User-Agent"),
-                    "PAYMENT_CREATE_FAILED",
+                    "XENDIT_PAYMENT_CREATE_FAILED",
                     "master_payment",
                     null,
                     null,
@@ -240,7 +269,7 @@ class PaymentsController {
                 data: error
             });
         }
-     }
+    }
 
 
     // PUT /payments/update
@@ -319,9 +348,6 @@ class PaymentsController {
                     }
                     finalAmount = parseFloat((parseFloat(originalAmount) - discountAmount).toFixed(2));
                     voucherId = voucher.mv_id;
-
-                    
-                    // await mysql.Query(`UPDATE master_voucher SET mv_useCount = mv_useCount + 1, mv_userId = ? WHERE mv_id = ?`, [userId, voucher.mv_id]);
                 }
             }
 
@@ -476,6 +502,98 @@ class PaymentsController {
             res.status(500).json({
                 message: "Server Error (500)",
                 data: error
+            });
+        }
+    }
+
+
+    // POST /payments/webhook
+    static async xenditWebhook(req, res) {
+        try {
+            
+            const event = req.body;
+
+            // SYSTEM LOGGING - WEBHOOK RECEIVED
+            await SystemLogger.logAction(
+                null,
+                req.ip,
+                req.get("User-Agent"),
+                "XENDIT_WEBHOOK_RECEIVED",
+                "master_payment",
+                event.data?.external_id || null,
+                null,
+                JSON.stringify({
+                    event: event.event,
+                    external_id: event.data?.external_id,
+                    invoice_status: event.data?.status,
+                    invoice_id: event.data?.id,
+                    created: event.data?.created_at,
+                    updated: event.data?.updated_at
+                })
+            );
+
+            if (event.event === "invoice.paid") {
+            const externalID = event.data.external_id;
+            
+            const [payment] = await mysql.Query(`
+                SELECT * FROM master_payment
+                WHERE mp_notes LIKE ? AND mp_status = 'PENDING_XENDIT'`, 
+                [`%${externalID}%`]
+            );
+
+            if (payment) {
+                await mysql.Query(`
+                    UPDATE master_payment
+                    SET mp_status = 'PAID',
+                        mp_paymentDate = NOW(),
+                        mp_confirmedAt = NOW(),
+                        mp_notes = ?
+                    WHERE mp_id = ?`,
+                    [`Xendit PAID: ${event.data.id}`, payment.mp_id]
+                );
+
+                // SYSTEM LOGGING - SUCCESS
+                await SystemLogger.logAction(
+                    null,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "XENDIT_PAYMENT_CONFIRMED",
+                    "master_payment",
+                    payment.mp_id,
+                    null,
+                    JSON.stringify({
+                        payment_id: payment.mp_id,
+                        xendit_invoice_id: event.data.id,
+                        external_id: externalID,
+                        amount: event.data.amount,
+                        status: "PAID"
+                    })
+                );
+            }
+        }
+
+        res.status(200).json({
+            status: "OK"
+        });
+
+        } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            await SystemLogger.logAction(
+                null,
+                req.ip,
+                req.get("User-Agent") || "UNKNOWN",
+                "XENDIT_WEBHOOK_FAILED",
+                "master_payment",
+                null,
+                null,
+                null,
+                "FAILED",
+                error.message
+            );
+            console.error("Xendit Webhook:", error);
+
+            res.status(500).json({
+                error: "Webhook processing Failed"
             });
         }
     }
