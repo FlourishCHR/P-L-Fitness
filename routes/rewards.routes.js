@@ -9,6 +9,5 @@ router.get("/", RewardsController.getDashboard);
 router.get("/load", RewardsController.loadRewards);
 router.get("/admin-load", RewardsController.adminLoad);
 router.post("/convert-attendance", RewardsController.convertAttendance);
-// router.post("/redeem-voucher", RewardsController.redeemVoucher);
 
 module.exports = router;

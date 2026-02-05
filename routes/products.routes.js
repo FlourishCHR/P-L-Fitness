@@ -10,5 +10,6 @@ router.get("/load", ProductsController.loadProducts);
 router.post("/insert", ProductsController.createProduct);
 router.put("/update", ProductsController.updateProduct);
 router.put("/delete", ProductsController.deleteProduct);
+router.post("/sale", ProductsController.createProductSale);
 
 module.exports = router;

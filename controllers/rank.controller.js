@@ -11,7 +11,7 @@ class RankController {
     // GET /ranks/load
     static async loadRanks(req, res) {
         try {
-            
+
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"

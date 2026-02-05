@@ -288,9 +288,8 @@ class AuthController {
                     mu_lastName,
                     mu_phoneNumber,
                     mu_role,
-                    mu_status,
-                    mu_createdById)
-            VALUES (?, ?, ?, ?, ?, ?, 'MEMBER', 'ACTIVE', NULL)`,
+                    mu_status)
+            VALUES (?, ?, ?, ?, ?, ?, 'MEMBER', 'ACTIVE')`,
             [email.trim(), username.trim(), hashedPassword, firstName.trim(),
             lastName.trim(), phoneNumber || null]);
 

@@ -321,6 +321,126 @@ class ProductsController {
             });
         }
     }
+
+
+    // POST /products/sale
+    static async createProductSale(req, res) {
+        try {
+            if (!req.user?.id || req.user.role !== "ADMIN") {
+                return res.status(401).json({
+                    message: "Admin authentication required (Bearer token)"
+                });
+            }
+
+            const { paymentId, products } = req.body;
+
+            // VALIDATION
+            if (!paymentId || !Array.isArray(products) || products.length === 0) {
+                return res.status(400).json({
+                    message: "paymentId and products array required",
+                    example: [{productId: 1, quantity: 2}]
+                });
+            }
+
+            // VERIFY PAYMENT EXISTS
+            const paymentCheck = await mysql.Query(
+                `SELECT mp_userId
+                FROM master_payment
+                WHERE mp_id = ?`,
+                [paymentId]
+            );
+            
+            if (paymentCheck.length === 0) {
+                return res.status(404).json({
+                    message: "Payment not found"
+                });
+            }
+
+            const userId = paymentCheck[0].mp_userId;
+            let salesCreated = 0;
+
+            // CREATE EACH PRODUCT SALE
+            for (const item of products) {
+
+                if (!item.productId || !item.quantity || item.quantity <= 0) {
+                    continue;
+                }
+
+                // VERIFY AND GET PRICE
+                const productCheck = await mysql.Query(
+                    `SELECT mpr_price
+                    FROM master_product
+                    WHERE mpr_id = ?
+                    AND mpr_status = 'ACTIVE'`,
+                    [item.productId]
+                );
+
+                if (productCheck.length === 0) {
+                    console.log(`Product ${item.productId} not found or inactive`);
+                    continue;
+                }
+
+                const unitPrice = productCheck[0].mpr_price;
+
+                const result = await mysql.Query(`
+                    INSERT INTO master_product_sale 
+                        (mps_paymentId,
+                        mps_userId,
+                        mps_productId,
+                        mps_quantity,
+                        mps_unitPrice)
+                    VALUES (?, ?, ?, ?, ?)
+                `, [paymentId, userId, item.productId, item.quantity, unitPrice]);
+
+                if (result.insertId) salesCreated++;
+            }
+
+            // SYSTEM LOGGING - SUCCESS
+            await SystemLogger.logAction(
+                req.user.id,
+                req.ip,
+                req.get("User-Agent"),
+                "PRODUCT_SALE_CREATED",
+                "master_product_sale",
+                paymentId,
+                null,
+                JSON.stringify({
+                    paymentId,
+                    products: products.length,
+                    salesCreated,
+                    userId
+                })
+            );
+
+            res.status(201).json({
+                message: `${salesCreated}/${products.length} product sales created!`,
+                salesCreated,
+                totalProducts: products.length
+            });
+
+        } catch (error) {
+            // SYSTEM LOGGING - ERROR
+            if (req.user?.id) {
+                await SystemLogger.logAction(
+                    req.user.id,
+                    req.ip,
+                    req.get("User-Agent"),
+                    "PRODUCT_SALE_FAILED",
+                    "master_product_sale",
+                    null,
+                    null,
+                    null,
+                    "FAILED",
+                    error.message
+                );
+            }
+            console.error("ProductsController.createProductSale:", error);
+            res.status(500).json({
+                message: "Server Error (500)",
+                error: error.message
+            });
+        }
+    }
 }
 
 module.exports = ProductsController;

@@ -88,20 +88,23 @@ class PaymentsController {
     // POST /payments/insert
     static async createPayment(req, res) {
         try {
-
             if (!req.user?.id) {
                 return res.status(401).json({
                     message: "Authentication required (Bearer token)"
                 });
             }
 
-            const { membershipId, userId, originalAmount, voucherCode } = req.body;
+            const { membershipId, userId, originalAmount,
+            voucherCode, isProductSale = false } = req.body;
 
             // VALIDATION
-            if (!membershipId || !userId || !originalAmount) {
+            if (!userId || !originalAmount) {
                 return res.status(400).json({
-                    message: "membershipId, userId, originalAmount required",
-                    validStatus: ["PAID", "PENDING", "CANCELLED", "REFUNDED"]
+                    message: "userId, originalAmount required. membershipId optional for products",
+                    example: {
+                        membership: { membershipId: 1, userId: 123, originalAmount: 1500 },
+                        product: { userId: 123, originalAmount: 500, isProductSale: true }
+                    }
                 });
             }
 
@@ -164,29 +167,33 @@ class PaymentsController {
 
             // XENDIT VALIDATION
             if (!process.env.XENDIT_SECRET_KEY) {
-            return res.status(500).json({
-                message: "Xendit configuration missing"
+                return res.status(500).json({
+                    message: "Xendit configuration missing"
                 });
             }
 
-            // CREATE UNIQUE XENDIT EXTERNAL ID
-            const externalID = `PLFIT_${membershipId}_${userId}_${Date.now()}`;
-            console.log("🔍 externalID:", externalID);
+            // DYNAMIC EXTERNAL ID + DESCRIPTION
+            const externalID = isProductSale 
+                ? `PROD_${userId}_${Date.now()}`
+                : `PLFIT_${membershipId}_${userId}_${Date.now()}`;
 
+            const description = isProductSale
+                ? `PLFitness Products Order`
+                : `PLFitness Membership #${membershipId}`;
 
             // CREATE XENDIT INVOICE
             const xenditInvoice = await XenditService.createInvoice({
-                externalID: externalID,
-                payerEmail: req.user.email || `member${userId}@plfitness.ph`,
-                description: `PLFitness Membership #${membershipId}`,
+                external_id: externalID,
+                payer_email: req.user.email || `member${userId}@plfitness.ph`,
+                description: description,
                 amount: Math.round(finalAmount * 100),
                 currency: 'PHP',
-                daysActive: 1,
-                successRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
-                failureRedirectUrl: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`,
+                days_active: 1,
+                success_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
+                failure_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/failed`
             });
 
-            // SAVE PENDING PAYMENT TO DB
+            // SAVE PENDING PAYMENT
             const result = await mysql.Query(`
                 INSERT INTO master_payment
                     (mp_membershipId,
@@ -199,9 +206,9 @@ class PaymentsController {
                     mp_status,
                     mp_notes,
                     mp_paymentDate)
-                VALUES (?, ?, ?, ?, ?, ?, 'XENDIT', 'PENDING_XENDIT', ?, NULL)`,
-                [membershipId, userId, voucherId, parseFloat(originalAmount), 
-                discountAmount, finalAmount, `Xendit Invoice: ${xenditInvoice.id}`]
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL)`,
+                [membershipId || null, userId, voucherId, parseFloat(originalAmount),
+                discountAmount, finalAmount, 'OTHER', `Xendit Invoice: ${xenditInvoice.id}`]
             );
 
             // SYSTEM LOGGING - SUCCESS
@@ -209,19 +216,20 @@ class PaymentsController {
                 req.user.id,
                 req.ip,
                 req.get("User-Agent"),
-                "XENDIT_PAYMENT_CREATED",
+                isProductSale ? "XENDIT_PRODUCT_PAYMENT_CREATED" : "XENDIT_PAYMENT_CREATED",
                 "master_payment",
                 result.insertId,
                 null,
                 JSON.stringify({
-                    membershipId,
+                    membershipId: membershipId || null,
                     userId,
                     originalAmount,
                     voucherCode,
                     discountAmount,
                     finalAmount,
                     externalID,
-                    xenditInvoiceId: xenditInvoice.id
+                    xenditInvoiceId: xenditInvoice.id,
+                    isProductSale
                 })
             );
 
@@ -231,6 +239,7 @@ class PaymentsController {
                     id: result.insertId,
                     xenditInvoiceUrl: xenditInvoice.invoice_url,
                     externalID,
+                    isProductSale,
                     originalAmount: parseFloat(originalAmount),
                     discountAmount,
                     finalAmount,
@@ -268,11 +277,10 @@ class PaymentsController {
         }
     }
 
-
     // PUT /payments/update
     static async updatePayment(req, res) {
         try {
-            
+
             if (!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
                     message: "Admin authentication required (Bearer token)"
@@ -282,9 +290,14 @@ class PaymentsController {
             const { id, originalAmount, voucherCode, mop, status } = req.body;
 
             // VALIDATION
-            if (!id || !originalAmount || !mop) {
+            if (!id || !originalAmount || !mop || !['CASH', 'CREDIT', 'OTHER'].includes(mop)) {
                 return res.status(400).json({
-                    message: "id, originalAmount, mop required"
+                    message: "id, originalAmount, mop required. mop must be CASH/CREDIT/OTHER"
+                });
+            }
+            if (status && !['PAID', 'PENDING', 'CANCELLED', 'REFUNDED'].includes(status)) {
+                return res.status(400).json({
+                    message: "status must be PAID/PENDING/CANCELLED/REFUNDED"
                 });
             }
 
@@ -293,12 +306,13 @@ class PaymentsController {
                 `SELECT
                     mp_originalAmount,
                     mp_voucherId,
-                    mp_userId
+                    mp_userId,
+                    mp_membershipId
                 FROM master_payment
                 WHERE mp_id = ?`, [id]);
 
             if (existingResult.length === 0) return res.status(404).json({
-                message: "Payment not found" 
+                message: "Payment not found"
                 });
 
             const existing = existingResult[0];
@@ -306,6 +320,33 @@ class PaymentsController {
             let discountAmount = 0;
             let finalAmount = parseFloat(originalAmount);
             const userId = existing.mp_userId;
+
+            if ((status || "PAID") === 'PAID' && existing.mp_membershipId) {
+            // CHECK PAYMENTS
+            const paymentDetails = await mysql.Query(`
+                SELECT
+                    mp_membershipId,
+                    mp_id
+                FROM master_payment
+                WHERE mp_id = ?
+                AND mp_membershipId IS NOT NULL
+            `, [id]);
+            
+            if (paymentDetails[0] && paymentDetails[0].mp_membershipId) {
+                // UPGRADE IF MEMBERSHIP
+                const membershipResult = await mysql.Query(`
+                    UPDATE master_membership
+                    SET mm_planType = 'PREMIUM',
+                        mm_status = 'ACTIVE'
+                    WHERE mm_id = ?
+                    AND mm_totalPaid >= COALESCE(mm_price, 0)
+                `, [paymentDetails[0].mp_membershipId]);
+                
+                if (membershipResult.affectedRows > 0) {
+                    console.log(`Membership ${paymentDetails[0].mp_membershipId} auto-upgraded to PREMIUM`);
+                    }
+                }
+            }
 
             if (voucherCode && (!existing.mp_voucherId || voucherCode !== existing.mp_voucherId)) {
                 const voucherResult = await mysql.Query(`
@@ -329,13 +370,19 @@ class PaymentsController {
                     const today = new Date().toISOString().split('T')[0];
 
                     if (today < voucher.mv_validFrom || today > voucher.mv_validUntil) {
-                        return res.status(400).json({ message: `Voucher expired. Valid ${voucher.mv_validFrom} to ${voucher.mv_validUntil}` });
+                        return res.status(400).json({
+                            message: `Voucher expired. Valid ${voucher.mv_validFrom} to ${voucher.mv_validUntil}`
+                        });
                     }
                     if (voucher.mv_useCount >= (voucher.mv_maxUses || 99999)) {
-                        return res.status(400).json({ message: "Voucher maximum uses reached" });
+                        return res.status(400).json({
+                            message: "Voucher maximum uses reached"
+                        });
                     }
                     if (voucher.mv_minSpend && parseFloat(originalAmount) < voucher.mv_minSpend) {
-                        return res.status(400).json({ message: `Minimum spend ${voucher.mv_minSpend} required` });
+                        return res.status(400).json({
+                            message: `Minimum spend ${voucher.mv_minSpend} required`
+                        });
                     }
 
                     if (voucher.mv_discountType === 'FIXED') {
@@ -359,10 +406,14 @@ class PaymentsController {
                     mp_status = ?
                     WHERE mp_id = ?`,
                 [parseFloat(originalAmount), discountAmount, finalAmount,
-                    voucherId, mop, status || "PAID", id]);
+                voucherId, mop, status || "PAID", id]);
 
-            if (result.affectedRows === 0) return res.status(404).json({ message: "Payment not found" });
+            if (result.affectedRows === 0)
+                return res.status(404).json({
+                message:"Payment not found"
+            });
 
+            // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
                 req.user.id,
                 req.ip,
@@ -439,6 +490,29 @@ class PaymentsController {
             if (!id || isNaN(id)) {
                 return res.status(400).json({
                     message: "Valid ID required"
+                });
+            }
+
+            const existingPayment = await mysql.Query(`
+                SELECT
+                    mp_notes,
+                    mp_status,
+                    mp_id
+                FROM master_payment
+                WHERE mp_id = ?`, [id]);
+
+            if (existingPayment.length === 0) {
+                return res.status(404).json({
+                    message: "Payment not found"
+                });
+            }
+
+            const payment = existingPayment[0];
+
+            // XENDIT PROTECTION
+            if (payment.mp_notes?.includes('Xendit') && payment.mp_status === 'PENDING') {
+                return res.status(400).json({ 
+                    message: "Cannot cancel pending Xendit payment. Expire via Xendit dashboard or wait 24h" 
                 });
             }
 
@@ -534,7 +608,8 @@ class PaymentsController {
             
             const [payment] = await mysql.Query(`
                 SELECT * FROM master_payment
-                WHERE mp_notes LIKE ? AND mp_status = 'PENDING_XENDIT'`, 
+                WHERE mp_notes LIKE ?
+                AND mp_status = 'PENDING'`,
                 [`%${externalID}%`]
             );
 
@@ -548,6 +623,20 @@ class PaymentsController {
                     WHERE mp_id = ?`,
                     [`Xendit PAID: ${event.data.id}`, payment.mp_id]
                 );
+
+                if (payment.mp_membershipId) {
+                const membershipResult = await mysql.Query(`
+                    UPDATE master_membership
+                    SET mm_planType = 'PREMIUM',
+                    mm_status = 'ACTIVE'
+                    WHERE mm_id = ?
+                    AND mm_totalPaid >= COALESCE(mm_price, 0)
+                `, [payment.mp_membershipId]);
+                
+                if (membershipResult.affectedRows > 0) {
+                    console.log(`Webhook upgraded membership ${payment.mp_membershipId}`);
+                }
+            }
 
                 // SYSTEM LOGGING - SUCCESS
                 await SystemLogger.logAction(

@@ -357,7 +357,10 @@ class AttendanceController {
             // UPDATE ATTENDANCE
             await mysql.Query(`
                 UPDATE master_attendance
-                SET ma_checkout = NOW(), ma_duration = ?, ma_pointsEarned = ?
+                SET
+                    ma_checkout = NOW(),
+                    ma_duration = ?,
+                    ma_pointsEarned = ?
                 WHERE ma_id = ?`, [duration || 0, pointsThisWorkout, ma_id]);
 
             // PREMIUM: ADD REWARD POINTS

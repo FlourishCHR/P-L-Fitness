@@ -28,7 +28,8 @@ class AdminController {
             // Total members count
             try {
                 const totalMembersResult = await mysql.Query(`
-                    SELECT COUNT(*) as count FROM master_user
+                    SELECT COUNT(*) as count
+                    FROM master_user
                     WHERE mu_status != 'DELETED'`);
                 totalMembers = totalMembersResult[0]?.count || 0;
             } catch (e) { console.error("Query error - totalMembers:", e.message); }
@@ -36,7 +37,8 @@ class AdminController {
             // New members this month
             try {
                 const newThisMonthResult = await mysql.Query(`
-                    SELECT COUNT(*) as count FROM master_user
+                    SELECT COUNT(*) as count
+                    FROM master_user
                     WHERE mu_status != 'DELETED'
                     AND MONTH(mu_createdAt) = MONTH(CURRENT_DATE())
                     AND YEAR(mu_createdAt) = YEAR(CURRENT_DATE())`);
@@ -53,7 +55,8 @@ class AdminController {
             // Monthly revenue - use mp_createdAt if mp_paymentDate doesn't exist
             try {
                 const revenueResult = await mysql.Query(`
-                    SELECT COALESCE(SUM(mp_finalAmount), 0) as revenue FROM master_payment
+                    SELECT COALESCE(SUM(mp_finalAmount), 0) as revenue
+                    FROM master_payment
                     WHERE mp_status = 'PAID'`);
                 monthlyRevenue = revenueResult[0]?.revenue || 0;
             } catch (e) { console.error("Query error - monthlyRevenue:", e.message); }
@@ -61,7 +64,8 @@ class AdminController {
             // Active today (check-ins today)
             try {
                 const activeTodayResult = await mysql.Query(`
-                    SELECT COUNT(DISTINCT ma_userId) as count FROM master_attendance
+                    SELECT COUNT(DISTINCT ma_userId) as count
+                    FROM master_attendance
                     WHERE DATE(ma_checkin) = CURRENT_DATE()
                     AND ma_deleted = 0`);
                 activeToday = activeTodayResult[0]?.count || 0;
@@ -70,11 +74,13 @@ class AdminController {
             // Total sessions
             try {
                 const totalSessionsResult = await mysql.Query(`
-                    SELECT COUNT(*) as count FROM master_session`);
+                    SELECT COUNT(*) as count
+                    FROM master_session`);
                 totalSessions = totalSessionsResult[0]?.count || 0;
 
                 const activeSessionsResult = await mysql.Query(`
-                    SELECT COUNT(*) as count FROM master_session
+                    SELECT COUNT(*) as count
+                    FROM master_session
                     WHERE ms_status = 'ACTIVE'`);
                 activeSessions = activeSessionsResult[0]?.count || 0;
             } catch (e) { console.error("Query error - sessions:", e.message); }
@@ -82,7 +88,9 @@ class AdminController {
             // Status breakdown
             try {
                 statusBreakdown = await mysql.Query(`
-                    SELECT mu_status as status, COUNT(*) as count
+                    SELECT
+                        mu_status as status,
+                        COUNT(*) as count
                     FROM master_user
                     WHERE mu_status != 'DELETED'
                     GROUP BY mu_status`);
@@ -100,14 +108,20 @@ class AdminController {
             // Revenue trend - simplified
             try {
                 revenueTrend = await mysql.Query(`
-                    SELECT 'Current' as month, COALESCE(SUM(mp_finalAmount), 0) as revenue, COUNT(*) as members
-                    FROM master_payment WHERE mp_status = 'PAID'`);
+                    SELECT
+                        'Current' as month,
+                        COALESCE(SUM(mp_finalAmount), 0) as revenue,
+                        COUNT(*) as members
+                    FROM master_payment
+                    WHERE mp_status = 'PAID'`);
             } catch (e) { console.error("Query error - revenueTrend:", e.message); }
 
             // Weekly attendance
             try {
                 weeklyAttendance = await mysql.Query(`
-                    SELECT DATE_FORMAT(ma_checkin, '%a') as day, COUNT(*) as attendance
+                    SELECT
+                        DATE_FORMAT(ma_checkin, '%a') as day,
+                        COUNT(*) as attendance
                     FROM master_attendance
                     WHERE ma_checkin >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
                     AND ma_deleted = 0
@@ -118,8 +132,11 @@ class AdminController {
             // Recent activity
             try {
                 recentActivity = await mysql.Query(`
-                    SELECT mu_id as id, CONCAT(mu_firstName, ' ', mu_lastName) as name,
-                        mu_email as email, mu_createdAt as createdAt, mu_role as role,
+                    SELECT
+                        mu_id as id, CONCAT(mu_firstName, ' ', mu_lastName) as name,
+                        mu_email as email,
+                        mu_createdAt as createdAt,
+                        mu_role as role,
                         'NEW_REGISTRATION' as activityType
                     FROM master_user WHERE mu_status != 'DELETED'
                     ORDER BY mu_createdAt DESC LIMIT 10`);
@@ -222,21 +239,15 @@ class AdminController {
                 mu.mu_username,
                 mu.mu_firstName,
                 mu.mu_lastName,
+                mu.mu_profileIcon,
                 mu.mu_phoneNumber,
                 mu.mu_role,
                 mu.mu_specialty,
                 mu.mu_status,
                 mu.mu_createdAt,
-                mu.mu_updatedAt,
-
-                c.mu_firstName AS createdByName,
-                u.mu_firstName AS updatedByName,
-                d.mu_firstName AS deletedByName
+                mu.mu_updatedAt
 
             FROM master_user mu
-            LEFT JOIN master_user c ON mu.mu_createdById = c.mu_id
-            LEFT JOIN master_user u ON mu.mu_updatedById = u.mu_id
-            LEFT JOIN master_user d ON mu.mu_deletedById = d.mu_id
             -- WHERE mu.mu_status != 'DELETED' -- delete this comment to see DELETED status
             ORDER BY mu.mu_createdAt DESC
             `;
@@ -282,8 +293,7 @@ class AdminController {
 
             const { email, username, password,
                 firstName, lastName, phoneNumber,
-                role, specialty, status
-            } = req.body;
+                role, specialty, status } = req.body;
 
             // PASSWORD VALIDATION
             if (!password || typeof password !== "string" || password.trim().length < 8) {
@@ -327,14 +337,12 @@ class AdminController {
                 mu_phoneNumber,
                 mu_role,
                 mu_specialty,
-                mu_status,
-                mu_createdById)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+                mu_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
             const result = await mysql.Query(sql, [email, username,
                 hashedPassword, firstName, lastName, phoneNumber, role,
-                specialty, status, req.user.id
-            ]);
+                specialty, status]);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
@@ -387,8 +395,7 @@ class AdminController {
 
             const { id, email, username, password,
                 firstName, lastName, phoneNumber,
-                role, specialty, status
-             } = req.body;
+                role, specialty, status } = req.body;
 
             // ID VALIDATION
             if (!id || isNaN(id)) {
@@ -402,7 +409,10 @@ class AdminController {
             if (password && password.trim().length >= 8) {
                 hashedPassword = await bcryptjs.hash(password.trim(), 12);
             } else {
-                const user = await mysql.Query(`SELECT mu_password FROM master_user WHERE mu_id = ?`, [id]);
+                const user = await mysql.Query(`
+                    SELECT mu_password
+                    FROM master_user
+                    WHERE mu_id = ?`, [id]);
                 if (!user.length) return res.status(404).json({ message: "User not found" });
                 hashedPassword = user[0].mu_password;
             }
@@ -451,14 +461,11 @@ class AdminController {
                 mu_phoneNumber = ?,
                 mu_role = ?,
                 mu_specialty = ?,
-                mu_status = ?,
-                mu_deletedById = NULL,
-                mu_updatedById = ?
+                mu_status = ?
             WHERE mu_id = ?`;
 
             const result = await mysql.Query(sql, [email, username, hashedPassword,
-                firstName, lastName, phoneNumber, role, specialty, status, req.user.id, id
-            ]);
+                firstName, lastName, phoneNumber, role, specialty, status, id]);
 
             if (result.affectedRows === 0) {
                 return res.status(404).json({
@@ -543,11 +550,10 @@ class AdminController {
                 mu_role = 'DELETED',
                 mu_specialty = 'DELETED',
                 mu_status = 'DELETED',
-                mu_deletedById = ?,
                 mu_deletedAt = NOW()
             WHERE mu_id = ?`;
 
-            const result = await mysql.Query(sql, [req.user.id, id]);
+            const result = await mysql.Query(sql, [id]);
 
             if (result.affectedRows === 0) {
                 return res.status(404).json({
@@ -612,7 +618,11 @@ class AdminController {
 
             // OLD USERS FOR SYSTEM LOGGING
             const oldUsers = await mysql.Query(`
-                SELECT mu_id, mu_username, mu_email, mu_role
+                SELECT
+                    mu_id,
+                    mu_username,
+                    mu_email,
+                    mu_role
                 FROM master_user
                 WHERE mu_id IN (?)`, [validIds]);
 
@@ -628,11 +638,10 @@ class AdminController {
                     mu_role = 'DELETED',
                     mu_specialty = 'DELETED',
                     mu_status = 'DELETED',
-                    mu_deletedById = ?,
                     mu_deletedAt = NOW()
                 WHERE mu_id IN (?)`;
 
-            const result = await mysql.Query(sql, [req.user.id, validIds]);
+            const result = await mysql.Query(sql, [validIds]);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(

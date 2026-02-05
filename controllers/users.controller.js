@@ -27,10 +27,11 @@ class UserController {
                     mu.mu_firstName,
                     mu.mu_lastName,
                     CONCAT(mu.mu_firstName, ' ', mu.mu_lastName) AS name,
-                    CONCAT('PL2024-', LPAD(mu.mu_id, 6, '0')) AS memberId,
+                    CONCAT('PL-', LPAD(mu.mu_id, 6, '0')) AS memberId,
                     mu.mu_phoneNumber,
                     mu.mu_email,
                     mu.mu_role,
+                    mu.mu_profileIcon,
                     mu.mu_createdAt AS joinDate,
                     mm.mm_planType,
                     mm.mm_planType AS membershipType,
@@ -99,7 +100,7 @@ class UserController {
     }
 
 
-    // PUT /users/profile
+    // PUT /users/update
     static async updateProfile(req, res) {
         try {
             
@@ -109,7 +110,7 @@ class UserController {
                 });
             }
 
-            const { phoneNumber, email, password } = req.body;
+            const { phoneNumber, email, password, profileIcon } = req.body;
 
             // PASSWORD VALIDATION
             if (password && (typeof password !== 'string' || password.trim().length < 8)) {
@@ -144,12 +145,11 @@ class UserController {
                 mu_phoneNumber = ?,
                 mu_email = ?,
                 mu_password = ?,
-                mu_updatedById = ?
+                mu_profileIcon = ?
             WHERE mu_id = ?`;
 
             const result = await mysql.Query(sql, [phoneNumber,
-                email, hashedPassword || null, req.user.id, req.user.id
-            ]);
+                email, hashedPassword || null, profileIcon || null, req.user.id]);
 
             if (result.affectedRows === 0) {
                 return res.status(404).json({
@@ -171,7 +171,8 @@ class UserController {
                     fieldsUpdated: {
                         phoneNumber: !!phoneNumber,
                         email: !!email,
-                        password: !!hashedPassword
+                        password: !!hashedPassword,
+                        profileIcon: !!profileIcon
                     },
                     affectedRows: result.affectedRows
                 })
