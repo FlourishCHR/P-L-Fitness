@@ -208,7 +208,7 @@ class PaymentsController {
                     mp_paymentDate)
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, NULL)`,
                 [membershipId || null, userId, voucherId, parseFloat(originalAmount),
-                discountAmount, finalAmount, 'OTHER', `Xendit Invoice: ${xenditInvoice.id}`]
+                discountAmount, finalAmount, 'OTHER', `Xendit Invoice: ${xenditInvoice.id} | Ext: ${externalID}`]
             );
 
             // SYSTEM LOGGING - SUCCESS
@@ -584,6 +584,12 @@ class PaymentsController {
             
             const event = req.body;
 
+            // MAKE SURE THIS IS COMMENTED IN IF YOU ARE DOING LOCAL TESTING
+            // const signature = req.headers['x-callback-token'];
+            // if (signature && !XenditService.verifyWebhookSignature(event, signature)) {
+            //     return res.status(401).json({ error: "Invalid signature" });
+            // }
+
             // SYSTEM LOGGING - WEBHOOK RECEIVED
             await SystemLogger.logAction(
                 null,
@@ -608,10 +614,11 @@ class PaymentsController {
             
             const [payment] = await mysql.Query(`
                 SELECT * FROM master_payment
+                WHERE mp_id IN (
+                SELECT mp_id FROM master_payment
                 WHERE mp_notes LIKE ?
-                AND mp_status = 'PENDING'`,
-                [`%${externalID}%`]
-            );
+                OR mp_notes LIKE ?)
+                AND mp_status = 'PENDING'`, [`%${externalID}%`, `%${event.data.id}%`]);
 
             if (payment) {
                 await mysql.Query(`
