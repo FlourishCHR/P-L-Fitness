@@ -232,23 +232,33 @@ class AdminController {
                 });
             }
 
-            const sql =`
+            const sql = `
             SELECT
                 mu.mu_id,
-                mu.mu_email,
                 mu.mu_username,
                 mu.mu_firstName,
                 mu.mu_lastName,
-                mu.mu_profileIcon,
+                CONCAT(mu.mu_firstName, ' ', mu.mu_lastName) AS name,
+                CONCAT('PL-', LPAD(mu.mu_id, 6, '0')) AS member_id,
                 mu.mu_phoneNumber,
+                mu.mu_email,
                 mu.mu_role,
+                mu.mu_profileIcon,
+                mu.mu_createdAt AS join_date,
                 mu.mu_specialty,
                 mu.mu_status,
-                mu.mu_createdAt,
-                mu.mu_updatedAt
-
+                mu.mu_updatedAt,
+                mm.mm_planType,
+                mm.mm_planType AS membership_type,
+                mm.mm_endDate AS expiry_date,
+                mm.mm_nextDueDate AS next_billing,
+                COALESCE(mus.mus_totalExperience, 0) AS total_experience,
+                COALESCE(r.mr_name, 'BRONZE') AS current_rank,
+                r.mr_icon AS rank_icon
             FROM master_user mu
-            -- WHERE mu.mu_status != 'DELETED' -- delete this comment to see DELETED status
+            LEFT JOIN master_membership mm ON mu.mu_id = mm.mm_userId AND mm.mm_status = 'ACTIVE'
+            LEFT JOIN master_user_stats mus ON mu.mu_id = mus.mus_userId
+            LEFT JOIN master_rank r ON mus.mus_currentRankId = r.mr_id
             ORDER BY mu.mu_createdAt DESC
             `;
 

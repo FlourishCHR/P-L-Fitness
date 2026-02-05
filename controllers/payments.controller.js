@@ -13,9 +13,9 @@ class PaymentsController {
     static async loadPayments(req, res) {
         try {
             
-            if(!req.user?.id) {
+            if(!req.user?.id || req.user.role !== "ADMIN") {
                 return res.status(401).json({
-                    message: "Authentication required (Bearer token)"
+                    message: "Admin authentication required (Bearer token)"
                 });
             }
 
@@ -186,7 +186,7 @@ class PaymentsController {
                 external_id: externalID,
                 payer_email: req.user.email || `member${userId}@plfitness.ph`,
                 description: description,
-                amount: Math.round(finalAmount * 100),
+                amount: finalAmount,
                 currency: 'PHP',
                 days_active: 1,
                 success_redirect_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/payment/success?external_id=${externalID}`,
@@ -587,7 +587,9 @@ class PaymentsController {
             // MAKE SURE THIS IS COMMENTED IN IF YOU ARE DOING LOCAL TESTING
             // const signature = req.headers['x-callback-token'];
             // if (signature && !XenditService.verifyWebhookSignature(event, signature)) {
-            //     return res.status(401).json({ error: "Invalid signature" });
+            //     return res.status(401).json({ 
+            //         error: "Invalid signature" 
+            //     });
             // }
 
             // SYSTEM LOGGING - WEBHOOK RECEIVED
@@ -650,16 +652,17 @@ class PaymentsController {
                     null,
                     req.ip,
                     req.get("User-Agent"),
-                    "XENDIT_PAYMENT_CONFIRMED",
+                    "XENDIT_WEBHOOK_RECEIVED",
                     "master_payment",
-                    payment.mp_id,
+                    null,
                     null,
                     JSON.stringify({
-                        payment_id: payment.mp_id,
-                        xendit_invoice_id: event.data.id,
-                        external_id: externalID,
-                        amount: event.data.amount,
-                        status: "PAID"
+                        event: event.event,
+                        external_id: event.data?.external_id,
+                        invoice_status: event.data?.status,
+                        invoice_id: event.data?.id,
+                        created: event.data?.created_at,
+                        updated: event.data?.updated_at,
                     })
                 );
             }

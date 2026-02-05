@@ -22,7 +22,7 @@
       open: true,
       proxy: {
         '/api': {
-          target: 'http://192.168.1.31:3000',
+          target: 'http://192.168.1.39:3000',
           changeOrigin: true,
           secure: false,
           rewrite: (path) => path.replace(/^\/api/, ''),
