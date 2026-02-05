@@ -1,10 +1,10 @@
 var express = require('express');
 var router = express.Router();
-const mysql = require('../services/dbconnect.js');
+var path = require('path');
 
-/* GET HOMEPAGE. */
+/* GET HOMEPAGE - Serve React app */
 router.get('/', function(req, res, next) {
-  res.render('index', { title: 'Express' });
+  res.sendFile(path.join(__dirname, '../build', 'index.html'));
 });
 
 
