@@ -43,7 +43,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.static(path.join(__dirname, 'build')));
 
 // RATE LIMIT
-app.use('/auth/login', rateLimit({
+app.use('/api/auth/login', rateLimit({
   windowMs: 5 * 60 * 1000,   // 5 MINS
   max: 5,                    // 5 ATTEMPTS PER IP
   message: "Too many login attempts. Try again in 5 minutes."
@@ -51,27 +51,27 @@ app.use('/auth/login', rateLimit({
 
 
 // PUBLIC ROUTES
-app.use('/auth', authRouter); //LOGIN
+app.use('/api/auth', authRouter); //LOGIN
 app.use('/', indexRouter); // LANDING PAGE
 // app.use('/admin', adminRouter); // FOR SEEDED ADMIN
 // app.use('/users', usersRouter);
 
 
 // PROTECTED ROUTES
-app.use('/admin', auth, adminRouter);
-app.use('/users', auth, usersRouter);
-app.use('/memberships', auth, membershipsRouter);
-app.use('/payments', auth, paymentsRouter);
-app.use('/product-categories', auth, productCategoryRouter);
-app.use('/products', auth, productsRouter);
-app.use('/ranks', auth, rankRouter);
-app.use('/experience', auth, experienceRouter);
-app.use('/achievements', auth, achievementRouter);
-app.use('/sessions', auth, sessionsRouter);
-app.use('/attendance', auth, attendanceRouter);
-app.use('/vouchers', auth, vouchersRouter);
-app.use('/rewards', auth, rewardsRouter);
-app.use('/equipment', auth, equipmentRouter);
+app.use('/api/admin', auth, adminRouter);
+app.use('/api/users', auth, usersRouter);
+app.use('/api/memberships', auth, membershipsRouter);
+app.use('/api/payments', auth, paymentsRouter);
+app.use('/api/product-categories', auth, productCategoryRouter);
+app.use('/api/products', auth, productsRouter);
+app.use('/api/ranks', auth, rankRouter);
+app.use('/api/experience', auth, experienceRouter);
+app.use('/api/achievements', auth, achievementRouter);
+app.use('/api/sessions', auth, sessionsRouter);
+app.use('/api/attendance', auth, attendanceRouter);
+app.use('/api/vouchers', auth, vouchersRouter);
+app.use('/api/rewards', auth, rewardsRouter);
+app.use('/api/equipment', auth, equipmentRouter);
 
 
 // TODO: CRON POINTS EXPIRY (?) not sure yet.
