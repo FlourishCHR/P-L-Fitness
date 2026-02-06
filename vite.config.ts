@@ -22,10 +22,9 @@
       open: true,
       proxy: {
         '/api': {
-          target: 'http://192.168.1.31:3000',
+          target: 'http://localhost:5000',
           changeOrigin: true,
           secure: false,
-          rewrite: (path) => path.replace(/^\/api/, ''),
           configure: (proxy, _options) => {
             proxy.on('error', (err, _req, _res) => {
               console.log('proxy error', err);
