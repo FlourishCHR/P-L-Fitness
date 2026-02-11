@@ -13,49 +13,37 @@ class ExperienceController {
             }
 
             // MEMBERSHIP CHECKING
-            const membership = await mysql.Query(`
-                SELECT mm_planType
-                FROM master_membership
-                WHERE mm_userId = ?
-                AND mm_status = "ACTIVE"
-                LIMIT 1`, [req.user.id]);
-
-            if (membership[0]?.mm_planType !== "PREMIUM") {
-                return res.status(403).json({
-                    message: "PREMIUM membership required to view experience"
-                });
+            if (req.user.role !== "ADMIN") {
+                const membership = await mysql.Query(`
+                    SELECT mm_planType
+                    FROM master_membership 
+                    WHERE mm_userId = ?
+                    AND mm_status = "ACTIVE"
+                    LIMIT 1`, [req.user.id]);
+                
+                if (membership[0]?.mm_planType !== "PREMIUM") {
+                    return res.status(403).json({ message:
+                        "PREMIUM membership required to view experience"
+                    });
+                }
             }
 
             const userId = req.params.userId || req.user.id;
 
-            const sql =`
-            SELECT 
-                user_id,
-                total_xp,
-                COALESCE(r.mr_name, 'BRONZE') as current_rank,
-                r.mr_icon
-            FROM (
-                SELECT u.mu_id as user_id,
-                COALESCE(SUM(mex.mex_experiencePoints), 0) AS total_xp
-                FROM master_user u
-                LEFT JOIN master_experience mex ON u.mu_id = mex.mex_userId 
-                AND mex.mex_status = 'ACTIVE'
-                WHERE u.mu_id = ?
-                GROUP BY u.mu_id
-            ) user_xp
-            LEFT JOIN master_rank r ON user_xp.total_xp BETWEEN r.mr_minExperience 
-            AND COALESCE(r.mr_maxExperience, 999999)
-            AND r.mr_status = 'ACTIVE'
-            ORDER BY r.mr_sortOrder DESC LIMIT 1`;
-
-            const defaultRank = await mysql.Query(`
-            SELECT 
+            const sql=`
+            SELECT
+                u.mu_id as user_id,
                 COALESCE(mus.mus_totalExperience, 0) AS total_xp,
                 COALESCE(r.mr_name, 'BRONZE') AS current_rank,
                 r.mr_icon
-            FROM master_user_stats mus
-            LEFT JOIN master_rank r ON mus.mus_currentRankId = r.mr_id
-            WHERE mus.mus_userId = ?`, [userId]);
+            FROM master_user u
+            LEFT JOIN master_user_stats mus ON u.mu_id = mus.mus_userId
+            LEFT JOIN master_rank r ON
+                (mus.mus_currentRankId = r.mr_id
+                OR (mus.mus_totalExperience BETWEEN r.mr_minExperience
+                AND COALESCE(r.mr_maxExperience, 999999)))
+            WHERE u.mu_id = ? AND u.mu_status = 'ACTIVE'
+            ORDER BY mus.mus_totalExperience DESC LIMIT 1`;
 
             const result = await mysql.Query(sql, [userId]);
 
@@ -73,9 +61,9 @@ class ExperienceController {
                 message: "Success",
                 data: result[0] || {
                     user_id: userId,
-                    total_xp: defaultRank[0]?.total_xp || 0,
-                    current_rank: defaultRank[0]?.current_rank || "BRONZE",
-                    mr_icon: defaultRank[0]?.mr_icon || null
+                    total_xp: 0,
+                    current_rank: "BRONZE",
+                    mr_icon: null
                 }
             })
 
@@ -193,40 +181,43 @@ class ExperienceController {
             }
 
             // MEMBERSHIP CHECK
-            const membership = await mysql.Query(`
-                SELECT mm_planType
-                FROM master_membership
-                WHERE mm_userId = ?
-                AND mm_status = "ACTIVE"
-                LIMIT 1`, [req.user.id]);
-            
-            if (membership[0]?.mm_planType !== "PREMIUM") {
-                return res.status(403).json({
-                    message: "PREMIUM membership required to view leaderboards"
-                });
+            if (req.user.role !== "ADMIN") {
+                const membership = await mysql.Query(`
+                    SELECT mm_planType
+                    FROM master_membership 
+                    WHERE mm_userId = ?
+                    AND mm_status = "ACTIVE"
+                    LIMIT 1`, [req.user.id]);
+                
+                if (membership[0]?.mm_planType !== "PREMIUM") {
+                    return res.status(403).json({
+                        message: "PREMIUM membership required to view leaderboards"
+                    });
+                }
             }
+
 
             const sql =`
             SELECT 
-                user_id,
-                total_xp,
-                COALESCE(r.mr_name, 'BRONZE') as current_rank,
+                ROW_NUMBER() OVER (ORDER BY COALESCE(mus.mus_totalExperience, 0) DESC, u.mu_id ASC) AS rank_position,
+                u.mu_id as user_id,
+                u.mu_username,
+                COALESCE(mus.mus_totalExperience, 0) AS total_xp,
+                COALESCE(r.mr_name, 'BRONZE') AS current_rank,
                 r.mr_icon
-            FROM (
-                SELECT u.mu_id as user_id,
-                COALESCE(SUM(mex.mex_experiencePoints), 0) AS total_xp
-                FROM master_user u
-                LEFT JOIN master_experience mex ON u.mu_id = mex.mex_userId
-                AND mex.mex_status = 'ACTIVE'
-                WHERE u.mu_status = 'ACTIVE'
-                GROUP BY u.mu_id
-            ) user_xp
-            LEFT JOIN master_rank r ON user_xp.total_xp BETWEEN r.mr_minExperience
-            AND COALESCE(r.mr_maxExperience, 999999)
-            AND r.mr_status = 'ACTIVE'
-            ORDER BY r.mr_sortOrder DESC, total_xp DESC LIMIT 10`;
+            FROM master_user u
+            LEFT JOIN master_user_stats mus ON u.mu_id = mus.mus_userId
+            LEFT JOIN master_rank r ON (
+                mus.mus_currentRankId = r.mr_id 
+                OR (mus.mus_totalExperience BETWEEN r.mr_minExperience
+                    AND COALESCE(r.mr_maxExperience, 999999))
+            )
+            WHERE u.mu_status = 'ACTIVE'
+            ORDER BY COALESCE(mus.mus_totalExperience, 0) DESC, u.mu_id ASC
+            LIMIT 10
+                `;
 
-            const result = await mysql.Query(sql);
+            const result = await mysql.Query(sql, []);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(

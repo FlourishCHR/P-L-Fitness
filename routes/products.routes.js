@@ -6,7 +6,8 @@ const ProductsController = require('../controllers/products.controller.js');
 router.get("/", ProductsController.getDashboard);
 
 // API ENDPOINTS
-router.get("/load", ProductsController.loadProducts);
+// router.get("/load", ProductsController.loadProducts);
+router.get("/load", ProductsController.loadProductsByCategory);
 router.post("/insert", ProductsController.createProduct);
 router.put("/update", ProductsController.updateProduct);
 router.put("/delete", ProductsController.deleteProduct);

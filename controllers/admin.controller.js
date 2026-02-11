@@ -239,7 +239,7 @@ class AdminController {
                 mu.mu_firstName,
                 mu.mu_lastName,
                 CONCAT(mu.mu_firstName, ' ', mu.mu_lastName) AS name,
-                CONCAT('PL-', LPAD(mu.mu_id, 6, '0')) AS member_id,
+                CONCAT('PLF-', LPAD(mu.mu_id, 6, '0')) AS member_id,
                 mu.mu_phoneNumber,
                 mu.mu_email,
                 mu.mu_role,
@@ -259,6 +259,7 @@ class AdminController {
             LEFT JOIN master_membership mm ON mu.mu_id = mm.mm_userId AND mm.mm_status = 'ACTIVE'
             LEFT JOIN master_user_stats mus ON mu.mu_id = mus.mus_userId
             LEFT JOIN master_rank r ON mus.mus_currentRankId = r.mr_id
+            -- WHERE mu.mu_status != 'DELETED' -- delete this comment to see DELETED status
             ORDER BY mu.mu_createdAt DESC
             `;
 

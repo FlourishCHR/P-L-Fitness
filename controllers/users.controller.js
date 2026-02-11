@@ -296,6 +296,8 @@ class UserController {
         }
     }
 
+
+    // GET /users/points
     static async getMyOpenCheckin(req, res) {
         try {
             

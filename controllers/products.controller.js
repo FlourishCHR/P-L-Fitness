@@ -7,9 +7,64 @@ class ProductsController {
         res.render("products", {title: "Products"});
     }
 
-
+    // TEMPORARY
     // GET /products/load
-    static async loadProducts(req, res) {
+    // static async loadProducts(req, res) {
+    //     try {
+            
+    //         if(!req.user?.id) {
+    //             return res.status(401).json({
+    //                 message: "Authentication required (Bearer token)"
+    //             });
+    //         }
+
+    //         const sql = `
+    //         SELECT * FROM master_product
+    //         ORDER BY mpr_id DESC`;
+
+    //         const result = await mysql.Query(sql);
+
+    //         // SYSTEM LOGGING - SUCCESS
+    //         await SystemLogger.logAction(
+    //             req.user.id,
+    //             req.ip,
+    //             req.get("User-Agent"),
+    //             "PRODUCTS_LISTED",
+    //             "master_product",
+    //             null
+    //         );
+
+    //         res.status(200).json({
+    //             message: "Success",
+    //             data: result
+    //         });
+
+    //     } catch (error) {
+    //         // SYSTEM LOGGING - ERROR
+    //         if (req.user?.id) {
+    //             await SystemLogger.logAction(
+    //                 req.user.id,
+    //                 req.ip,
+    //                 req.get("User-Agent"),
+    //                 "PRODUCT_LIST_FAILED",
+    //                 "master_product",
+    //                 null,
+    //                 null,
+    //                 null,
+    //                 "FAILED",
+    //                 error.message
+    //             );
+    //         }
+    //         console.error("ProductsController.loadProducts: ", error);
+    //         res.status(500).json({
+    //             message: "Error fetching products",
+    //             data: error
+    //         });
+    //     }
+    // }
+
+    // GET /products/?:categoryId
+    static async loadProductsByCategory(req, res) {
         try {
             
             if(!req.user?.id) {
@@ -18,18 +73,56 @@ class ProductsController {
                 });
             }
 
-            const sql = `
-            SELECT * FROM master_product
-            ORDER BY mpr_id DESC`;
+            const { categoryId } = req.query;
 
-            const result = await mysql.Query(sql);
+            // VALIDATION
+            if (categoryId) {
+                const categoryCheck = await mysql.Query(`
+                    SELECT
+                        mpc_id,
+                        mpc_name
+                    FROM master_product_category
+                    WHERE mpc_id = ?
+                    AND mpc_status = 'ACTIVE'`, [categoryId]);
+
+                if (categoryCheck.length === 0) {
+                    return res.status(400).json({
+                        message: `Category ${categoryId} not found`,
+                        availableCategory: await mysql.Query(`
+                            SELECT
+                                mpc_id,
+                                mpc_name
+                            FROM master_product_category
+                            WHERE mpc_status = 'ACTIVE'`)
+                    });
+                }
+            }
+
+            let sql=`
+            SELECT 
+                p.*,
+                c.mpc_name AS category_name
+            FROM master_product p
+            LEFT JOIN master_product_category c ON p.mpr_categoryId = c.mpc_id
+            WHERE p.mpr_status = 'ACTIVE'`;
+
+            const params = [];
+
+            if (categoryId) {
+                sql += ` AND p.mpr_categoryId = ?`;
+                params.push(categoryId);
+            }
+
+            sql += ` ORDER BY p.mpr_id DESC`;
+
+            const result = await mysql.Query(sql, params);
 
             // SYSTEM LOGGING - SUCCESS
             await SystemLogger.logAction(
                 req.user.id,
                 req.ip,
                 req.get("User-Agent"),
-                "PRODUCTS_LISTED",
+                "PRODUCTS_LISTED_BY_CATEGORY",
                 "master_product",
                 null
             );
@@ -55,13 +148,14 @@ class ProductsController {
                     error.message
                 );
             }
-            console.error("ProductsController.loadProducts: ", error);
+            console.error("ProductsController.loadProductsByCategory: ", error);
             res.status(500).json({
                 message: "Error fetching products",
                 data: error
             });
         }
     }
+
 
 
     // POST /products/insert
@@ -84,6 +178,24 @@ class ProductsController {
                 });
             }
 
+            const categoryCheck = await mysql.Query(`
+                SELECT mpc_id
+                FROM master_product_category
+                WHERE mpc_id = ?
+                AND mpc_status = 'ACTIVE'`, [categoryId]);
+            
+            if (categoryCheck.length === 0) {
+                return res.status(400).json({
+                    message: `Invalid categoryId: ${categoryId}. Create category first.`,
+                    availableCategories: await mysql.Query(`
+                        SELECT
+                            mpc_id,
+                            mpc_name
+                        FROM master_product_category
+                        WHERE mpc_status = 'ACTIVE'`)
+                });
+            }
+
             const sql =`
             INSERT INTO master_product
                 (mpr_categoryId,
@@ -95,7 +207,7 @@ class ProductsController {
                 mpr_status)
             VALUES (?, ?, ?, ?, ?, ?, ?)`;
 
-            const result = await mysql.Query(sql, [1, `SKU${Date.now()}`, name, parseFloat(price),
+            const result = await mysql.Query(sql, [categoryId, `SKU${Date.now()}`, name, parseFloat(price),
                 parseInt(stockQuantity), description || null, status || "ACTIVE"]);
 
             // SYSTEM LOGGING - SUCCESS
